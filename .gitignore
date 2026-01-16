@@ -9,6 +9,11 @@ lerna-debug.log*
 
 node_modules/
 functions/node_modules/
+functions/.env.*
+functions/.env
+functions/.runtimeconfig.json
+
+
 dist
 dist-ssr
 *.local

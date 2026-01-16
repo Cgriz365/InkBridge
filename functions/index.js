@@ -1,4 +1,5 @@
 const functions = require("firebase-functions");
+const { defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const express = require("express");
 const cors = require("cors");
@@ -14,10 +15,13 @@ app.use(cors({ origin: true }));
 const APP_ID = "default-app-id"; 
 
 // --- SPOTIFY CONFIGURATION ---
-// These should be set via: firebase functions:config:set spotify.client_id="..." spotify.client_secret="..."
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || functions.config().spotify?.client_id;
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || functions.config().spotify?.client_secret;
-const SPOTIFY_REDIRECT_URI = `https://us-central1-${process.env.GCLOUD_PROJECT || "inkbase01"}.cloudfunctions.net/api/spotify/callback`;
+// Define secret parameters - these will be prompted during deployment
+const SPOTIFY_CLIENT_ID = defineString("SPOTIFY_CLIENT_ID");
+const SPOTIFY_CLIENT_SECRET = defineString("SPOTIFY_CLIENT_SECRET");
+
+const getSpotifyRedirectUri = () => {
+  return `https://us-central1-${process.env.GCLOUD_PROJECT || "inkbase01"}.cloudfunctions.net/api/spotify/callback`;
+};
 
 // --- DATA PROVIDERS ---
 const refreshSpotifyToken = async (uid, refreshToken) => {
@@ -29,7 +33,7 @@ const refreshSpotifyToken = async (uid, refreshToken) => {
     const response = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: {
-            'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64'),
+            'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID.value() + ':' + SPOTIFY_CLIENT_SECRET.value()).toString('base64'),
             'Content-Type': 'application/x-www-form-urlencoded'
         },
         body: params
@@ -95,9 +99,9 @@ app.get('/spotify/login', (req, res) => {
     
     const query = new URLSearchParams({
         response_type: 'code',
-        client_id: SPOTIFY_CLIENT_ID,
+        client_id: SPOTIFY_CLIENT_ID.value(),
         scope: scope,
-        redirect_uri: SPOTIFY_REDIRECT_URI,
+        redirect_uri: getSpotifyRedirectUri(),
         state: state
     });
 
@@ -120,13 +124,13 @@ app.get('/spotify/callback', async (req, res) => {
     try {
         const params = new URLSearchParams();
         params.append('code', code);
-        params.append('redirect_uri', SPOTIFY_REDIRECT_URI);
+        params.append('redirect_uri', getSpotifyRedirectUri());
         params.append('grant_type', 'authorization_code');
 
         const response = await fetch('https://accounts.spotify.com/api/token', {
             method: 'POST',
             headers: {
-                'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64'),
+                'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID.value() + ':' + SPOTIFY_CLIENT_SECRET.value()).toString('base64'),
                 'Content-Type': 'application/x-www-form-urlencoded'
             },
             body: params
