@@ -1,4 +1,12 @@
 # [InkBridge](https://inkbase01.web.app)
+<p align="center">
+  <img src="Resources/InkBridgeDashboard.png" width="865">
+  <img src="Resources/InkBridgeIntegrations.png" height="250">
+  <img src="Resources/InkBridgeSetup.png" height="250"
+</p>
+  
+___
+
 # InkBridge Technical Overview
 
 InkBridge is a full-stack IoT solution designed to drive ESP32-based displays. It utilizes a centralized controller pattern where the "heavy lifting" (API authentication, and data aggregation) is offloaded to the cloud to minimize the processing requirements of the low-power client. While designed for low-power clients (E-Ink displays), Inkbase functions to drive any internet enabled device given an API and the capability to make web requests.
