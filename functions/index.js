@@ -8,9 +8,9 @@ const { FieldValue } = require("firebase-admin/firestore");
 // Initialize Firebase Admin
 admin.initializeApp();
 const db = admin.firestore();
-
 const app = express();
 app.use(cors({ origin: true }));
+app.use(express.json());
 
 // CONSTANTS
 const APP_ID = "default-app-id";
@@ -59,6 +59,48 @@ const refreshSpotifyToken = async (uid, refreshToken) => {
   console.log(`Spotify token refreshed successfully for UID: ${uid}`);
 
   return data.access_token;
+};
+
+const makeSpotifyRequest = async (uid, endpoint, method = "GET", body = null) => {
+  const settingsRef = db.collection("artifacts").doc(APP_ID)
+    .collection("users").doc(uid)
+    .collection("settings").doc("integrations");
+
+  const docSnap = await settingsRef.get();
+  if (!docSnap.exists) throw new Error("User settings not found");
+
+  let { spotify_access_token, spotify_refresh_token, spotify_token_expiry } = docSnap.data();
+
+  if (!spotify_access_token || !spotify_refresh_token) {
+    throw new Error("Spotify not connected");
+  }
+
+  // Check if token is expired or expiring in the next 5 minutes
+  if (Date.now() > (spotify_token_expiry - 300000)) {
+    console.log(`Token expired for ${uid}, refreshing...`);
+    spotify_access_token = await refreshSpotifyToken(uid, spotify_refresh_token);
+  }
+
+  const options = {
+    method: method,
+    headers: {
+      "Authorization": `Bearer ${spotify_access_token}`,
+      "Content-Type": "application/json",
+    },
+  };
+
+  if (body) options.body = JSON.stringify(body);
+
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint.substring(1) : endpoint;
+  const response = await fetch(`https://api.spotify.com/v1/${cleanEndpoint}`, options);
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Spotify API Error ${response.status}: ${errText}`);
+  }
+
+  if (response.status === 204) return {};
+  return await response.json();
 };
 
 // --- ROUTE: DEVICE SETUP ---
@@ -154,6 +196,20 @@ app.get('/spotify/callback', async (req, res) => {
     console.log("Spotify token exchange successful, redirecting...");
     res.redirect(redirectUrl);
   } catch (error) { console.error("Spotify Auth Error:", error); res.status(500).send("Authentication Error"); }
+});
+
+app.post("/spotify/request", async (req, res) => {
+  try {
+    const { uid, endpoint, method, body } = req.body;
+    if (!uid || !endpoint) {
+      return res.status(400).json({ status: "error", message: "Missing uid or endpoint" });
+    }
+    const data = await makeSpotifyRequest(uid, endpoint, method, body);
+    res.json({ status: "success", data });
+  } catch (error) {
+    console.error("Spotify Proxy Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
 });
 
 exports.api = functions.https.onRequest(app);

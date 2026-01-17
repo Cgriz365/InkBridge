@@ -191,6 +191,10 @@ export default function InkBridge() {
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
+  // Spotify Playback State
+  const [spotifyPlayback, setSpotifyPlayback] = useState<any>(null);
+  const [loadingSpotify, setLoadingSpotify] = useState(false);
+
   // NEW: Listen for Device Handshake
   useEffect(() => {
     if (!activeDeviceId || !user) return;
@@ -329,6 +333,35 @@ export default function InkBridge() {
     if (!user) return;
     const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
     window.location.href = `${apiUrl}/spotify/login?uid=${user.uid}&redirect=${encodeURIComponent(window.location.href)}`;
+  };
+
+  const fetchSpotifyPlayback = async () => {
+    if (!user) return;
+    setLoadingSpotify(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/spotify/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          endpoint: 'me/player/currently-playing',
+          method: 'GET'
+        })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setSpotifyPlayback(result.data);
+      } else {
+        console.error("Spotify API Error:", result.message);
+        setSpotifyPlayback(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setSpotifyPlayback(null);
+    } finally {
+      setLoadingSpotify(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -663,9 +696,33 @@ void loop() {
               <div className="flex flex-col gap-4 border border-dashed border-stone-200 p-4 rounded-lg bg-stone-50">
                 <p className="text-xs text-stone-500 italic">Connect your Spotify account to display playback info.</p>
                 {integrations['spotify_access_token'] ? (
-                  <button disabled className="self-start bg-emerald-100 text-emerald-700 font-bold py-2 px-6 rounded-full text-xs flex items-center gap-2 shadow-sm border border-emerald-200 cursor-default">
-                    <Check size={16} /> Spotify Connected
-                  </button>
+                  <div className="space-y-3">
+                    <button disabled className="self-start bg-emerald-100 text-emerald-700 font-bold py-2 px-6 rounded-full text-xs flex items-center gap-2 shadow-sm border border-emerald-200 cursor-default">
+                      <Check size={16} /> Spotify Connected
+                    </button>
+                    
+                    <div className="flex items-center gap-3">
+                       <button 
+                         onClick={fetchSpotifyPlayback} 
+                         disabled={loadingSpotify}
+                         className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                       >
+                         {loadingSpotify ? <RefreshCw size={14} className="animate-spin"/> : <Music size={14} />}
+                         Check Now
+                       </button>
+                       {spotifyPlayback && (
+                         <div className="text-xs text-black bg-white border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                           {spotifyPlayback.item ? (
+                             <span>
+                               <strong>{spotifyPlayback.item.name}</strong> by {spotifyPlayback.item.artists.map((a: any) => a.name).join(', ')}
+                             </span>
+                           ) : (
+                             <span className="text-stone-500 italic">Nothing playing</span>
+                           )}
+                         </div>
+                       )}
+                    </div>
+                  </div>
                 ) : (
                   <button onClick={handleSpotifyLogin} className="self-start bg-[#1DB954] hover:bg-[#1ed760] text-white font-bold py-2 px-6 rounded-full text-xs transition-colors flex items-center gap-2 shadow-sm">
                     <Music size={16} /> Connect Spotify
