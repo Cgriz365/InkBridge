@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
-  getFirestore, doc, setDoc, getDoc, collection, query, getDocs
+  getFirestore, doc, setDoc, getDoc, collection, query, getDocs, onSnapshot
 } from 'firebase/firestore';
 import {
   getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, type User
@@ -169,6 +169,7 @@ export default function InkBridge() {
   const [deviceIdInput, setDeviceIdInput] = useState("");
   const [linkStatus, setLinkStatus] = useState<string>("");
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
+  const [deviceStatus, setDeviceStatus] = useState<'linked' | 'online'>('linked');
   const [lastSync, setLastSync] = useState<number | null>(null);
 
   // Integrations State
@@ -189,6 +190,30 @@ export default function InkBridge() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+
+  // NEW: Listen for Device Handshake
+  useEffect(() => {
+    if (!activeDeviceId || !user) return;
+
+    const deviceRef = doc(db, "artifacts", appId, "devices", activeDeviceId);
+
+    // Subscribe to real-time updates
+    const unsubscribe = onSnapshot(deviceRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.lastHandshake) {
+          setDeviceStatus('online');
+          // Convert Firestore timestamp to millis if needed
+          const millis = data.lastHandshake.toMillis ? data.lastHandshake.toMillis() : Date.now();
+          setLastSync(millis);
+        } else {
+          setDeviceStatus('linked');
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [activeDeviceId, user]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -359,14 +384,33 @@ export default function InkBridge() {
           {/* STATUS CARD */}
           <div className="bg-white text-black border border-stone-200 rounded-lg shadow-sm p-8 flex flex-col justify-between relative overflow-hidden">
             <div className="relative z-10">
-              <h2 className="text-xs font-bold uppercase tracking-widest text-black mb-4 flex items-center gap-2"><Activity size={14} /> Device Status</h2>
+              <h2 className="text-xs font-bold uppercase tracking-widest text-black mb-4 flex items-center gap-2">
+                <Activity size={14} /> Device Status
+              </h2>
               {activeDeviceId ? (
                 <div>
-                  <div className="text-3xl font-bold text-black mb-2">Online</div>
-                  <div className="text-xs text-black font-mono border border-stone-200 rounded p-1 inline-block">ID: {activeDeviceId}</div>
-                  {lastSync && <div className="text-[10px] text-black mt-4 font-mono">Synced: {new Date(lastSync).toLocaleTimeString()}</div>}
+                  {/* Dynamic Status Display */}
+                  <div className={`text-3xl font-bold mb-2 ${deviceStatus === 'online' ? 'text-emerald-600' : 'text-amber-500'}`}>
+                    {deviceStatus === 'online' ? 'Online' : 'Linked'}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-black font-mono border border-stone-200 rounded p-1 inline-block">
+                      ID: {activeDeviceId}
+                    </div>
+                    {deviceStatus === 'linked' && (
+                       <span className="text-[10px] text-stone-400 italic">Waiting for connection...</span>
+                    )}
+                  </div>
+
+                  {lastSync && deviceStatus === 'online' && (
+                    <div className="text-[10px] text-black mt-4 font-mono">
+                      Last Contact: {new Date(lastSync).toLocaleTimeString()}
+                    </div>
+                  )}
                 </div>
               ) : (
+                // ... existing "No Device" state ...
                 <div>
                   <div className="text-2xl text-stone-500 mb-1">No Device</div>
                   <div className="text-xs text-stone-500">Link a device in Setup</div>
