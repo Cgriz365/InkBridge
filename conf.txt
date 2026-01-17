@@ -1,8 +1,0 @@
-const firebaseConfig = {
-  apiKey: "AIzaSyBPpGfOASHF3vFz2p_aUeF-HFun_curbJo",
-  authDomain: "inkbase01.firebaseapp.com",
-  projectId: "inkbase01",
-  storageBucket: "inkbase01.firebasestorage.app",
-  messagingSenderId: "477027384144",
-  appId: "1:477027384144:web:18bfffe2d3e2b4685eca55"
-};
