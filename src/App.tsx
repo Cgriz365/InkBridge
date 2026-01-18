@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore, doc, setDoc, getDoc, collection, query, getDocs, onSnapshot
@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import {
   Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
-  Save, Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
+  Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
   Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Terminal, Cpu, LayoutDashboard, Settings,
   type LucideIcon
 } from 'lucide-react';
@@ -213,6 +213,7 @@ export default function InkBridge() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const isInitialLoad = useRef(true);
 
   // Spotify Playback State
   const [spotifyPlayback, setSpotifyPlayback] = useState<any>(null);
@@ -318,7 +319,7 @@ export default function InkBridge() {
   const handleLogin = async () => { await signInWithPopup(auth, new GoogleAuthProvider()); };
   const handleLogout = async () => { await signOut(auth); setUser(null); };
 
-  const handleSaveIntegrations = async () => {
+  const saveIntegrations = async () => {
     if (!user) return;
     setSaveState('saving');
     try {
@@ -331,6 +332,19 @@ export default function InkBridge() {
       setSaveState('idle');
     }
   };
+
+  // Auto-save Effect
+  useEffect(() => {
+    if (loading || !user) return;
+    
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
+    }
+
+    const timeoutId = setTimeout(() => saveIntegrations(), 1000);
+    return () => clearTimeout(timeoutId);
+  }, [integrations, loading, user]);
 
   const registerDevice = async () => {
     if (!user || !deviceIdInput || !defaultConfigId) return;
@@ -689,14 +703,11 @@ void loop() {
           >
             <Plus size={16} /> Add Service
           </button>
-          <button
-            onClick={handleSaveIntegrations}
-            disabled={saveState === 'saving'}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-full font-bold transition-all shadow-md text-sm text-white ${saveState === 'saved' ? 'bg-emerald-600' : 'bg-black hover:bg-stone-800'}`}
-          >
-            {saveState === 'saving' ? <RefreshCw size={16} className="animate-spin" /> : saveState === 'saved' ? <Check size={16} /> : <Save size={16} />}
-            {saveState === 'saved' ? 'Saved' : 'Save Changes'}
-          </button>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold transition-all text-xs ${saveState === 'saved' ? 'text-emerald-600 bg-emerald-50 border border-emerald-100' : saveState === 'saving' ? 'text-stone-500 bg-stone-100' : 'text-stone-400 bg-stone-50 border border-stone-100'}`}>
+            {saveState === 'saving' && <RefreshCw size={12} className="animate-spin" />}
+            {(saveState === 'saved' || saveState === 'idle') && <Check size={12} />}
+            {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'No Changes'}
+          </div>
         </div>
 
         <div className="flex flex-col gap-6">
