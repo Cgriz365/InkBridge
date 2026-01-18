@@ -23,8 +23,7 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 
 ### Core Modules
 **Data Providers:**
-- **Mock Data**: Weather, Stock (placeholders for production APIs). *Under Development*
-- **Live Data**: Time, Spotify, Calendar, Canvas LMS.
+- **Live Data**: Time, Spotify, Calendar, Canvas LMS, Weather, Stock.
 
 **Spotify Integration**: Implements the OAuth 2.0 Authorization Code Flow. It automatically handles token refreshing if the access token is expired before fetching playback state.
 
@@ -38,6 +37,8 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 | `/spotify/request` | POST | Proxies authenticated requests to the Spotify Web API (e.g., current playback). |
 | `/calendar` | POST | Fetches and parses the user's iCal feed, returning a filtered list of upcoming events. |
 | `/canvas` | POST | Proxies requests to the Canvas LMS API to retrieve upcoming assignments. |
+| `/weather` | POST | Fetches current weather conditions via WeatherAPI.com. |
+| `/stock` | POST | Fetches real-time stock quotes via Finnhub. |
 
 ## Frontend Analysis
 
@@ -76,12 +77,12 @@ The application implements a full server-side OAuth flow:
 
 ## TO-DO
 ### Backend Development (Node JS)
-- [ ] **Weather Module (getWeather)**
-- Register for OpenWeatherMap API.
-- Replace random math with axios or fetch call to OpenWeatherMap One Call API.
+- [x] **Weather Module (getWeather)**
+- Register for WeatherAPI.com.
+- Replace random math with fetch call to WeatherAPI.
 - Map API response icons to internal SVG paths.
-- [ ] **Stock Module (getStock)**
-- Register for Finnhub.io or AlphaVantage.
+- [x] **Stock Module (getStock)**
+- Register for Finnhub.io.
 - Replace random math with real API calls for the requested symbol.
 - [x] **Calendar Module (getGoogleCalendar)**
 - Install node-ical package.
