@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore, doc, setDoc, getDoc, collection, query, getDocs, onSnapshot
@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import {
   Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
-  Save, Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
+  Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
   Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Terminal, Cpu, LayoutDashboard, Settings,
   type LucideIcon
 } from 'lucide-react';
@@ -30,6 +30,7 @@ interface IntegrationState {
   stock_api_key: string;
   calendar_enabled: boolean;
   ical_url: string;
+  calendar_range: string;
   canvas_enabled: boolean;
   canvas_token: string;
   spotify_enabled: boolean;
@@ -118,6 +119,27 @@ const InputField = ({ label, value, field, onChange, placeholder, type = "text",
   </div>
 );
 
+const ToggleGroup = ({ label, value, field, onChange, options, subtext }: { label: string; value: string; field: string; onChange: (f: string, v: string) => void; options: { value: string; label: string }[]; subtext?: string }) => (
+  <div className="mb-5 last:mb-0">
+    <label className="block text-[10px] uppercase tracking-wider font-bold text-black mb-1.5 ml-1">
+      {label}
+    </label>
+    <div className="flex gap-1">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(field, opt.value)}
+          className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${value === opt.value ? 'bg-stone-100 text-black font-bold' : 'text-stone-500 hover:text-black hover:bg-stone-100'}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+    {subtext && <p className="text-[10px] text-black mt-1 ml-1 italic">{subtext}</p>}
+  </div>
+);
+
 const ActiveIntegrationCard = ({ serviceId, onRemove, isEnabled, children }: ActiveIntegrationCardProps) => {
   const service = AVAILABLE_SERVICES.find(s => s.id === serviceId);
   if (!service) return null;
@@ -182,6 +204,7 @@ export default function InkBridge() {
     stock_api_key: "",
     calendar_enabled: false,
     ical_url: "",
+    calendar_range: "1d",
     canvas_enabled: false,
     canvas_token: "",
     spotify_enabled: false
@@ -190,6 +213,15 @@ export default function InkBridge() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const isInitialLoad = useRef(true);
+
+  // Spotify Playback State
+  const [spotifyPlayback, setSpotifyPlayback] = useState<any>(null);
+  const [loadingSpotify, setLoadingSpotify] = useState(false);
+
+  // Calendar State
+  const [calendarEvents, setCalendarEvents] = useState<any[] | null>(null);
+  const [loadingCalendar, setLoadingCalendar] = useState(false);
 
   // NEW: Listen for Device Handshake
   useEffect(() => {
@@ -287,7 +319,7 @@ export default function InkBridge() {
   const handleLogin = async () => { await signInWithPopup(auth, new GoogleAuthProvider()); };
   const handleLogout = async () => { await signOut(auth); setUser(null); };
 
-  const handleSaveIntegrations = async () => {
+  const saveIntegrations = async () => {
     if (!user) return;
     setSaveState('saving');
     try {
@@ -300,6 +332,19 @@ export default function InkBridge() {
       setSaveState('idle');
     }
   };
+
+  // Auto-save Effect
+  useEffect(() => {
+    if (loading || !user) return;
+    
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
+    }
+
+    const timeoutId = setTimeout(() => saveIntegrations(), 1000);
+    return () => clearTimeout(timeoutId);
+  }, [integrations, loading, user]);
 
   const registerDevice = async () => {
     if (!user || !deviceIdInput || !defaultConfigId) return;
@@ -329,6 +374,63 @@ export default function InkBridge() {
     if (!user) return;
     const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
     window.location.href = `${apiUrl}/spotify/login?uid=${user.uid}&redirect=${encodeURIComponent(window.location.href)}`;
+  };
+
+  const fetchSpotifyPlayback = async () => {
+    if (!user) return;
+    setLoadingSpotify(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/spotify/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          endpoint: 'me/player/currently-playing',
+          method: 'GET'
+        })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setSpotifyPlayback(result.data);
+      } else {
+        console.error("Spotify API Error:", result.message);
+        setSpotifyPlayback(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setSpotifyPlayback(null);
+    } finally {
+      setLoadingSpotify(false);
+    }
+  };
+
+  const fetchCalendarEvents = async () => {
+    if (!user) return;
+    setLoadingCalendar(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/calendar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          range: integrations.calendar_range
+        })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setCalendarEvents(result.data);
+      } else {
+        console.error("Calendar API Error:", result.message);
+        setCalendarEvents(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setCalendarEvents(null);
+    } finally {
+      setLoadingCalendar(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -601,14 +703,11 @@ void loop() {
           >
             <Plus size={16} /> Add Service
           </button>
-          <button
-            onClick={handleSaveIntegrations}
-            disabled={saveState === 'saving'}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-full font-bold transition-all shadow-md text-sm text-white ${saveState === 'saved' ? 'bg-emerald-600' : 'bg-black hover:bg-stone-800'}`}
-          >
-            {saveState === 'saving' ? <RefreshCw size={16} className="animate-spin" /> : saveState === 'saved' ? <Check size={16} /> : <Save size={16} />}
-            {saveState === 'saved' ? 'Saved' : 'Save Changes'}
-          </button>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold transition-all text-xs ${saveState === 'saved' ? 'text-emerald-600 bg-emerald-50 border border-emerald-100' : saveState === 'saving' ? 'text-stone-500 bg-stone-100' : 'text-stone-400 bg-stone-50 border border-stone-100'}`}>
+            {saveState === 'saving' && <RefreshCw size={12} className="animate-spin" />}
+            {(saveState === 'saved' || saveState === 'idle') && <Check size={12} />}
+            {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'No Changes'}
+          </div>
         </div>
 
         <div className="flex flex-col gap-6">
@@ -641,6 +740,50 @@ void loop() {
               onRemove={() => handleRemoveService('calendar')}
             >
               <InputField label="iCal URL" value={integrations.ical_url as string} field="ical_url" onChange={handleInputChange} placeholder="https://calendar.google.com/..." subtext="Google Calendar > Settings > Public/Secret address in iCal format." />
+              <ToggleGroup 
+                label="Date Range" 
+                value={integrations.calendar_range || "1d"} 
+                field="calendar_range" 
+                onChange={handleInputChange} 
+                options={[
+                  { value: "1d", label: "1 Day" },
+                  { value: "3d", label: "3 Days" },
+                  { value: "1w", label: "1 Week" },
+                  { value: "1m", label: "1 Month" }
+                ]}
+                subtext="How far ahead to look for events."
+              />
+              
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                    <button 
+                      onClick={fetchCalendarEvents} 
+                      disabled={loadingCalendar}
+                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      {loadingCalendar ? <RefreshCw size={14} className="animate-spin"/> : <Calendar size={14} />}
+                      Check Events
+                    </button>
+                 </div>
+                 {calendarEvents && (
+                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                     {calendarEvents.length > 0 ? (
+                       calendarEvents.map((evt: any, idx: number) => (
+                         <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                           <div className="font-bold truncate">{evt.summary}</div>
+                           <div className="text-[10px] text-stone-500 flex justify-between mt-1">
+                             <span>{new Date(evt.start).toLocaleDateString()} {new Date(evt.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                           </div>
+                         </div>
+                       ))
+                     ) : (
+                       <div className="text-xs text-stone-500 italic bg-stone-50 border border-stone-200 px-3 py-2 rounded-md">
+                         No events found.
+                       </div>
+                     )}
+                   </div>
+                 )}
+              </div>
             </ActiveIntegrationCard>
           )}
 
@@ -663,9 +806,33 @@ void loop() {
               <div className="flex flex-col gap-4 border border-dashed border-stone-200 p-4 rounded-lg bg-stone-50">
                 <p className="text-xs text-stone-500 italic">Connect your Spotify account to display playback info.</p>
                 {integrations['spotify_access_token'] ? (
-                  <button disabled className="self-start bg-emerald-100 text-emerald-700 font-bold py-2 px-6 rounded-full text-xs flex items-center gap-2 shadow-sm border border-emerald-200 cursor-default">
-                    <Check size={16} /> Spotify Connected
-                  </button>
+                  <div className="space-y-3">
+                    <button disabled className="self-start bg-emerald-100 text-emerald-700 font-bold py-2 px-6 rounded-full text-xs flex items-center gap-2 shadow-sm border border-emerald-200 cursor-default">
+                      <Check size={16} /> Spotify Connected
+                    </button>
+                    
+                    <div className="flex items-center gap-3">
+                       <button 
+                         onClick={fetchSpotifyPlayback} 
+                         disabled={loadingSpotify}
+                         className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                       >
+                         {loadingSpotify ? <RefreshCw size={14} className="animate-spin"/> : <Music size={14} />}
+                         Check Now
+                       </button>
+                       {spotifyPlayback && (
+                         <div className="text-xs text-black bg-white border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                           {spotifyPlayback.item ? (
+                             <span>
+                               <strong>{spotifyPlayback.item.name}</strong> by {spotifyPlayback.item.artists.map((a: any) => a.name).join(', ')}
+                             </span>
+                           ) : (
+                             <span className="text-stone-500 italic">Nothing playing</span>
+                           )}
+                         </div>
+                       )}
+                    </div>
+                  </div>
                 ) : (
                   <button onClick={handleSpotifyLogin} className="self-start bg-[#1DB954] hover:bg-[#1ed760] text-white font-bold py-2 px-6 rounded-full text-xs transition-colors flex items-center gap-2 shadow-sm">
                     <Music size={16} /> Connect Spotify
