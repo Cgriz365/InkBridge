@@ -63,7 +63,7 @@ const appId = "default-app-id";
 
 // --- CONSTANTS ---
 const AVAILABLE_SERVICES: Service[] = [
-  { id: 'weather', name: 'Weather', icon: Cloud, description: 'Current conditions via OpenWeatherMap.' },
+  { id: 'weather', name: 'Weather', icon: Cloud, description: 'Current conditions via WeatherAPI.com.' },
   { id: 'stock', name: 'Stocks', icon: TrendingUp, description: 'Track market prices via Finnhub.' },
   { id: 'calendar', name: 'Google Calendar', icon: Calendar, description: 'Upcoming events from iCal feed.' },
   { id: 'canvas', name: 'Canvas LMS', icon: BookOpen, description: 'Assignments and due dates.' },
@@ -228,6 +228,14 @@ export default function InkBridge() {
   // Canvas State
   const [canvasAssignments, setCanvasAssignments] = useState<any[] | null>(null);
   const [loadingCanvas, setLoadingCanvas] = useState(false);
+
+  // Weather State
+  const [weatherData, setWeatherData] = useState<any>(null);
+  const [loadingWeather, setLoadingWeather] = useState(false);
+
+  // Stock State
+  const [stockData, setStockData] = useState<any>(null);
+  const [loadingStock, setLoadingStock] = useState(false);
 
   // NEW: Listen for Device Handshake
   useEffect(() => {
@@ -461,6 +469,56 @@ export default function InkBridge() {
       setCanvasAssignments(null);
     } finally {
       setLoadingCanvas(false);
+    }
+  };
+
+  const fetchWeather = async () => {
+    if (!user) return;
+    setLoadingWeather(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/weather`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setWeatherData(result.data);
+      } else {
+        console.error("Weather API Error:", result.message);
+        setWeatherData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setWeatherData(null);
+    } finally {
+      setLoadingWeather(false);
+    }
+  };
+
+  const fetchStock = async () => {
+    if (!user) return;
+    setLoadingStock(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/stock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setStockData(result.data);
+      } else {
+        console.error("Stock API Error:", result.message);
+        setStockData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setStockData(null);
+    } finally {
+      setLoadingStock(false);
     }
   };
 
@@ -728,8 +786,27 @@ void loop() {
               isEnabled={integrations.weather_enabled as boolean}
               onRemove={() => handleRemoveService('weather')}
             >
-              <InputField label="Location" value={integrations.weather_city as string} field="weather_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses OpenWeatherMap." />
+              <InputField label="Location" value={integrations.weather_city as string} field="weather_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
               <InputField label="API Key (Optional)" value={integrations.weather_api_key as string} field="weather_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
+              
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                    <button 
+                      onClick={fetchWeather} 
+                      disabled={loadingWeather}
+                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      {loadingWeather ? <RefreshCw size={14} className="animate-spin"/> : <Cloud size={14} />}
+                      Check Weather
+                    </button>
+                 </div>
+                 {weatherData && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold">{weatherData.city}</div>
+                     <div className="text-[10px] text-stone-500 mt-1">{weatherData.temp}°F - {weatherData.condition} ({weatherData.description})</div>
+                   </div>
+                 )}
+              </div>
             </ActiveIntegrationCard>
           )}
 
@@ -741,6 +818,25 @@ void loop() {
             >
               <InputField label="Stock Symbol" value={integrations.stock_symbol as string} field="stock_symbol" onChange={handleInputChange} placeholder="e.g. AAPL" subtext="Displays price and trend." />
               <InputField label="Finnhub API Key (Optional)" value={integrations.stock_api_key as string} field="stock_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
+              
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                    <button 
+                      onClick={fetchStock} 
+                      disabled={loadingStock}
+                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      {loadingStock ? <RefreshCw size={14} className="animate-spin"/> : <TrendingUp size={14} />}
+                      Check Stock
+                    </button>
+                 </div>
+                 {stockData && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold">{stockData.symbol}</div>
+                     <div className="text-[10px] text-stone-500 mt-1">${stockData.price} ({stockData.percent > 0 ? '+' : ''}{stockData.percent}%)</div>
+                   </div>
+                 )}
+              </div>
             </ActiveIntegrationCard>
           )}
 

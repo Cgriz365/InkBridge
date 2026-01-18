@@ -19,6 +19,8 @@ const APP_ID = "default-app-id";
 // --- SPOTIFY CONFIGURATION ---
 const SPOTIFY_CLIENT_ID = defineString("SPOTIFY_CLIENT_ID");
 const SPOTIFY_CLIENT_SECRET = defineString("SPOTIFY_CLIENT_SECRET");
+const WEATHERAPI_KEY = defineString("WEATHERAPI_KEY");
+const FINNHUB_API_KEY = defineString("FINNHUB_API_KEY");
 
 const getSpotifyRedirectUri = () => {
   return `https://us-central1-${process.env.GCLOUD_PROJECT || "inkbase01"}.cloudfunctions.net/api/spotify/callback`;
@@ -284,7 +286,7 @@ app.post("/calendar", async (req, res) => {
 // --- ROUTE: CANVAS ---
 app.post("/canvas", async (req, res) => {
   try {
-    const { uid } = req.body;
+    const { uid, type } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const settingsRef = db.collection("artifacts").doc(APP_ID)
@@ -299,6 +301,25 @@ app.post("/canvas", async (req, res) => {
 
     // Clean domain input
     canvas_domain = canvas_domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    if (type === "grades") {
+      const response = await fetch(`https://${canvas_domain}/api/v1/courses?enrollment_state=active&include[]=total_scores`, {
+        headers: { "Authorization": `Bearer ${canvas_token}` }
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Canvas API Error ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      const grades = data.map(course => ({
+        course: course.name,
+        grade: course.enrollments?.[0]?.computed_current_score || "N/A",
+        letter: course.enrollments?.[0]?.computed_current_grade || "N/A"
+      }));
+      return res.json({ status: "success", data: grades });
+    }
 
     const startDate = new Date().toISOString();
     const endDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // Next 7 days
@@ -321,6 +342,83 @@ app.post("/canvas", async (req, res) => {
     res.json({ status: "success", data: assignments });
   } catch (error) {
     console.error("Canvas Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: WEATHER ---
+app.post("/weather", async (req, res) => {
+  try {
+    const { uid, location } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = db.collection("artifacts").doc(APP_ID)
+      .collection("users").doc(uid)
+      .collection("settings").doc("integrations");
+
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { weather_city, weather_api_key } = docSnap.data();
+    const queryCity = location || weather_city;
+    if (!queryCity) return res.status(400).json({ status: "error", message: "Weather location not set" });
+
+    const apiKey = weather_api_key || WEATHERAPI_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const response = await fetch(`https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(queryCity)}&aqi=no`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`WeatherAPI Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    res.json({ status: "success", data: { temp: Math.round(data.current.temp_f), condition: data.current.condition.text, description: data.current.condition.text, city: data.location.name } });
+  } catch (error) {
+    console.error("Weather Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: STOCK ---
+app.post("/stock", async (req, res) => {
+  try {
+    const { uid, symbol } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = db.collection("artifacts").doc(APP_ID)
+      .collection("users").doc(uid)
+      .collection("settings").doc("integrations");
+
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { stock_symbol, stock_api_key } = docSnap.data();
+    const querySymbol = symbol || stock_symbol;
+    if (!querySymbol) return res.status(400).json({ status: "error", message: "Stock symbol not set" });
+
+    const apiKey = stock_api_key || FINNHUB_API_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(querySymbol)}&token=${apiKey}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Finnhub Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    res.json({
+      status: "success",
+      data: {
+        symbol: querySymbol.toUpperCase(),
+        price: data.c,
+        percent: data.dp,
+        high: data.h,
+        low: data.l
+      }
+    });
+  } catch (error) {
+    console.error("Stock Error:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
