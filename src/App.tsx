@@ -9,7 +9,7 @@ import {
 import {
   Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
   Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
-  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Terminal, Cpu, LayoutDashboard, Settings,
+  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings,
   type LucideIcon
 } from 'lucide-react';
 
@@ -32,6 +32,7 @@ interface IntegrationState {
   ical_url: string;
   calendar_range: string;
   canvas_enabled: boolean;
+  canvas_domain: string;
   canvas_token: string;
   spotify_enabled: boolean;
   [key: string]: string | boolean; // Index signature for dynamic access
@@ -206,6 +207,7 @@ export default function InkBridge() {
     ical_url: "",
     calendar_range: "1d",
     canvas_enabled: false,
+    canvas_domain: "",
     canvas_token: "",
     spotify_enabled: false
   });
@@ -222,6 +224,10 @@ export default function InkBridge() {
   // Calendar State
   const [calendarEvents, setCalendarEvents] = useState<any[] | null>(null);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
+
+  // Canvas State
+  const [canvasAssignments, setCanvasAssignments] = useState<any[] | null>(null);
+  const [loadingCanvas, setLoadingCanvas] = useState(false);
 
   // NEW: Listen for Device Handshake
   useEffect(() => {
@@ -433,6 +439,31 @@ export default function InkBridge() {
     }
   };
 
+  const fetchCanvasAssignments = async () => {
+    if (!user) return;
+    setLoadingCanvas(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/canvas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setCanvasAssignments(result.data);
+      } else {
+        console.error("Canvas API Error:", result.message);
+        setCanvasAssignments(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setCanvasAssignments(null);
+    } finally {
+      setLoadingCanvas(false);
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
@@ -466,14 +497,6 @@ export default function InkBridge() {
         activeIntegrations.push({ source: "spotify", status: "Not Connected" });
       }
     }
-
-    const mockResponse = {
-      status: "success",
-      timestamp: Date.now(),
-      refresh_rate: 900,
-      active_sources: activeIntegrations.length,
-      data: activeIntegrations
-    };
 
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -538,18 +561,6 @@ export default function InkBridge() {
                 ))}
               </div>
             )}
-          </div>
-        </div>
-
-        {/* PREVIEW CARD */}
-        <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-0 overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-stone-100 bg-stone-50">
-            <h2 className="text-sm font-bold text-black uppercase tracking-wider flex items-center gap-2"><Terminal size={16} /> Payload Preview</h2>
-            <span className="text-[10px] text-black border border-stone-200 bg-white px-2 py-1 rounded font-mono">LIVE</span>
-          </div>
-
-          <div className="bg-stone-100 p-4 font-mono text-[11px] leading-relaxed text-black overflow-x-auto">
-            {JSON.stringify(mockResponse, null, 2)}
           </div>
         </div>
       </div>
@@ -793,7 +804,40 @@ void loop() {
               isEnabled={integrations.canvas_enabled as boolean}
               onRemove={() => handleRemoveService('canvas')}
             >
+              <InputField label="Canvas Domain" value={integrations.canvas_domain as string} field="canvas_domain" onChange={handleInputChange} placeholder="canvas.instructure.com" subtext="Your school's Canvas URL." />
               <InputField label="Access Token" value={integrations.canvas_token as string} field="canvas_token" onChange={handleInputChange} placeholder="7~..." type="password" subtext="Canvas > Account > Settings > New Access Token." />
+              
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                    <button 
+                      onClick={fetchCanvasAssignments} 
+                      disabled={loadingCanvas}
+                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      {loadingCanvas ? <RefreshCw size={14} className="animate-spin"/> : <BookOpen size={14} />}
+                      Check Assignments
+                    </button>
+                 </div>
+                 {canvasAssignments && (
+                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                     {canvasAssignments.length > 0 ? (
+                       canvasAssignments.map((item: any, idx: number) => (
+                         <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                           <div className="font-bold truncate">{item.title}</div>
+                           <div className="text-[10px] text-stone-500 flex justify-between mt-1">
+                             <span>{item.due_at ? new Date(item.due_at).toLocaleDateString() : 'No Due Date'}</span>
+                             <span className="capitalize">{item.type}</span>
+                           </div>
+                         </div>
+                       ))
+                     ) : (
+                       <div className="text-xs text-stone-500 italic bg-stone-50 border border-stone-200 px-3 py-2 rounded-md">
+                         No assignments found.
+                       </div>
+                     )}
+                   </div>
+                 )}
+              </div>
             </ActiveIntegrationCard>
           )}
 
