@@ -281,4 +281,48 @@ app.post("/calendar", async (req, res) => {
   }
 });
 
+// --- ROUTE: CANVAS ---
+app.post("/canvas", async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = db.collection("artifacts").doc(APP_ID)
+      .collection("users").doc(uid)
+      .collection("settings").doc("integrations");
+
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    let { canvas_token, canvas_domain } = docSnap.data();
+    if (!canvas_token || !canvas_domain) return res.status(400).json({ status: "error", message: "Canvas not connected" });
+
+    // Clean domain input
+    canvas_domain = canvas_domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    const startDate = new Date().toISOString();
+    const endDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // Next 7 days
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate, order: "asc" });
+
+    const response = await fetch(`https://${canvas_domain}/api/v1/planner/items?${params}`, {
+      headers: { "Authorization": `Bearer ${canvas_token}` }
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Canvas API Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const assignments = data.map(item => ({
+      id: item.plannable_id, title: item.plannable.title, due_at: item.plannable.due_at, type: item.plannable_type
+    }));
+
+    res.json({ status: "success", data: assignments });
+  } catch (error) {
+    console.error("Canvas Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 exports.api = functions.https.onRequest(app);

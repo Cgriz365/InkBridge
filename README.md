@@ -23,8 +23,8 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 
 ### Core Modules
 **Data Providers:**
-- **Mock Data**: Weather, Stock, Calendar (placeholders for production APIs). *Under Development*
-- **Live Data**: Time, Spotify. *Spotify Web API is functioning*
+- **Mock Data**: Weather, Stock (placeholders for production APIs). *Under Development*
+- **Live Data**: Time, Spotify, Calendar, Canvas LMS.
 
 **Spotify Integration**: Implements the OAuth 2.0 Authorization Code Flow. It automatically handles token refreshing if the access token is expired before fetching playback state.
 
@@ -35,6 +35,9 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 | `/setup` | GET | Handles the initial handshake. Receives a physical `device_id` and returns an API Key associated with the user account. |
 | `/spotify/login` | GET | Initiates the OAuth login flow, redirecting the user to Spotify. |
 | `/spotify/callback` | GET | Handles the OAuth callback, exchanges the code for tokens, and saves them to Firestore. |
+| `/spotify/request` | POST | Proxies authenticated requests to the Spotify Web API (e.g., current playback). |
+| `/calendar` | POST | Fetches and parses the user's iCal feed, returning a filtered list of upcoming events. |
+| `/canvas` | POST | Proxies requests to the Canvas LMS API to retrieve upcoming assignments. |
 
 ## Frontend Analysis
 
@@ -70,7 +73,6 @@ The application implements a full server-side OAuth flow:
 2. **Redirect**: Backend constructs the authorization URL with state (User UID) and redirects to Spotify.
 3. **Callback**: Spotify calls the backend with a code.
 4. **Storage**: Backend exchanges code for Access/Refresh tokens and stores them securely in Firestore.
-5. **Refresh**: The `/display` endpoint checks token expiry and uses the Refresh Token to ensure valid access when the device polls for data.
 
 ## TO-DO
 ### Backend Development (Node JS)
@@ -81,16 +83,16 @@ The application implements a full server-side OAuth flow:
 - [ ] **Stock Module (getStock)**
 - Register for Finnhub.io or AlphaVantage.
 - Replace random math with real API calls for the requested symbol.
-- [ ] **Calendar Module (getGoogleCalendar)**
+- [x] **Calendar Module (getGoogleCalendar)**
 - Install node-ical package.
 - Implement logic to fetch the user's ical_url, parse the VCALENDAR stream, and filter for upcoming events.
-- [ ] **Canvas LMS Module (getCanvasAssignments)**
+- [x] **Canvas LMS Module (getCanvasAssignments)**
 - Implement a fetch call to the user's Canvas domain /api/v1/planner/items.
 - Pass the user's canvas_token in the Authorization header.
-- [ ] **Configuration Logic (Critical Gap Fix)**
-- Issue: Currently, App.tsx saves settings to a settings collection, but index.js reads layout from a configurations collection.
-- Task: Create a Firestore Trigger (onCreate/onUpdate) on settings/integrations that automatically adds/removes the corresponding widget from the active document in configurations.
-- Alternative: Update App.tsx to modify the configurations document directly when a user toggles a service.
 ### Frontend Development (Typescript)
-- [ ] **Device Linking UX**
+- [x] **Device Linking UX**
 - Add a visual indicator in the "Setup" tab that listens to the devices collection. When a device is successfully linked, auto-refresh the UI to confirm the connection immediately.
+- [x] **API Functionality Checks**
+- Add a button indicator in the "Integrations" tab the allows the user to test their API keys. The integrations tab will show a refeshed list of information fetched from the API.
+- [x] **Auto-Saving**
+- Add auto-saving functionality to the integrations page.
