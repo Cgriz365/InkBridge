@@ -30,6 +30,7 @@ interface IntegrationState {
   stock_api_key: string;
   calendar_enabled: boolean;
   ical_url: string;
+  calendar_range: string;
   canvas_enabled: boolean;
   canvas_token: string;
   spotify_enabled: boolean;
@@ -118,6 +119,27 @@ const InputField = ({ label, value, field, onChange, placeholder, type = "text",
   </div>
 );
 
+const ToggleGroup = ({ label, value, field, onChange, options, subtext }: { label: string; value: string; field: string; onChange: (f: string, v: string) => void; options: { value: string; label: string }[]; subtext?: string }) => (
+  <div className="mb-5 last:mb-0">
+    <label className="block text-[10px] uppercase tracking-wider font-bold text-black mb-1.5 ml-1">
+      {label}
+    </label>
+    <div className="flex gap-1">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(field, opt.value)}
+          className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${value === opt.value ? 'bg-stone-100 text-black font-bold' : 'text-stone-500 hover:text-black hover:bg-stone-100'}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+    {subtext && <p className="text-[10px] text-black mt-1 ml-1 italic">{subtext}</p>}
+  </div>
+);
+
 const ActiveIntegrationCard = ({ serviceId, onRemove, isEnabled, children }: ActiveIntegrationCardProps) => {
   const service = AVAILABLE_SERVICES.find(s => s.id === serviceId);
   if (!service) return null;
@@ -182,6 +204,7 @@ export default function InkBridge() {
     stock_api_key: "",
     calendar_enabled: false,
     ical_url: "",
+    calendar_range: "1d",
     canvas_enabled: false,
     canvas_token: "",
     spotify_enabled: false
@@ -194,6 +217,10 @@ export default function InkBridge() {
   // Spotify Playback State
   const [spotifyPlayback, setSpotifyPlayback] = useState<any>(null);
   const [loadingSpotify, setLoadingSpotify] = useState(false);
+
+  // Calendar State
+  const [calendarEvents, setCalendarEvents] = useState<any[] | null>(null);
+  const [loadingCalendar, setLoadingCalendar] = useState(false);
 
   // NEW: Listen for Device Handshake
   useEffect(() => {
@@ -361,6 +388,34 @@ export default function InkBridge() {
       setSpotifyPlayback(null);
     } finally {
       setLoadingSpotify(false);
+    }
+  };
+
+  const fetchCalendarEvents = async () => {
+    if (!user) return;
+    setLoadingCalendar(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/calendar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          range: integrations.calendar_range
+        })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setCalendarEvents(result.data);
+      } else {
+        console.error("Calendar API Error:", result.message);
+        setCalendarEvents(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setCalendarEvents(null);
+    } finally {
+      setLoadingCalendar(false);
     }
   };
 
@@ -674,6 +729,50 @@ void loop() {
               onRemove={() => handleRemoveService('calendar')}
             >
               <InputField label="iCal URL" value={integrations.ical_url as string} field="ical_url" onChange={handleInputChange} placeholder="https://calendar.google.com/..." subtext="Google Calendar > Settings > Public/Secret address in iCal format." />
+              <ToggleGroup 
+                label="Date Range" 
+                value={integrations.calendar_range || "1d"} 
+                field="calendar_range" 
+                onChange={handleInputChange} 
+                options={[
+                  { value: "1d", label: "1 Day" },
+                  { value: "3d", label: "3 Days" },
+                  { value: "1w", label: "1 Week" },
+                  { value: "1m", label: "1 Month" }
+                ]}
+                subtext="How far ahead to look for events."
+              />
+              
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                    <button 
+                      onClick={fetchCalendarEvents} 
+                      disabled={loadingCalendar}
+                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      {loadingCalendar ? <RefreshCw size={14} className="animate-spin"/> : <Calendar size={14} />}
+                      Check Events
+                    </button>
+                 </div>
+                 {calendarEvents && (
+                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                     {calendarEvents.length > 0 ? (
+                       calendarEvents.map((evt: any, idx: number) => (
+                         <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                           <div className="font-bold truncate">{evt.summary}</div>
+                           <div className="text-[10px] text-stone-500 flex justify-between mt-1">
+                             <span>{new Date(evt.start).toLocaleDateString()} {new Date(evt.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                           </div>
+                         </div>
+                       ))
+                     ) : (
+                       <div className="text-xs text-stone-500 italic bg-stone-50 border border-stone-200 px-3 py-2 rounded-md">
+                         No events found.
+                       </div>
+                     )}
+                   </div>
+                 )}
+              </div>
             </ActiveIntegrationCard>
           )}
 

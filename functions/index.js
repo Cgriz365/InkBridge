@@ -4,6 +4,7 @@ const admin = require("firebase-admin");
 const express = require("express");
 const cors = require("cors");
 const { FieldValue } = require("firebase-admin/firestore");
+const ical = require("node-ical");
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -208,6 +209,74 @@ app.post("/spotify/request", async (req, res) => {
     res.json({ status: "success", data });
   } catch (error) {
     console.error("Spotify Proxy Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: CALENDAR ---
+app.post("/calendar", async (req, res) => {
+  try {
+    const { uid, range } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = db.collection("artifacts").doc(APP_ID)
+      .collection("users").doc(uid)
+      .collection("settings").doc("integrations");
+
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { ical_url, calendar_range } = docSnap.data();
+    if (!ical_url) return res.status(400).json({ status: "error", message: "Calendar not connected" });
+
+    const events = await ical.async.fromURL(ical_url);
+    const now = new Date();
+    let endLimit = new Date();
+
+    const useRange = range || calendar_range || "1d";
+
+    if (useRange === "1m") endLimit.setMonth(now.getMonth() + 1);
+    else if (useRange === "1w") endLimit.setDate(now.getDate() + 7);
+    else if (useRange === "3d") endLimit.setDate(now.getDate() + 3);
+    else endLimit.setDate(now.getDate() + 1); // Default 1d
+
+    const results = [];
+    for (const event of Object.values(events)) {
+      if (event.type !== "VEVENT" || !event.start) continue;
+
+      const startDate = new Date(event.start);
+      const endDate = event.end ? new Date(event.end) : new Date(startDate.getTime() + 3600000);
+      const duration = endDate.getTime() - startDate.getTime();
+
+      if (event.rrule) {
+        const searchStart = new Date(now.getTime() - duration);
+        try {
+          const dates = event.rrule.between(searchStart, endLimit, true);
+          dates.forEach((date) => {
+            const instanceStart = new Date(date);
+            const instanceEnd = new Date(instanceStart.getTime() + duration);
+            if (instanceEnd >= now && instanceStart <= endLimit) {
+              results.push({ summary: event.summary, start: instanceStart, end: instanceEnd, location: event.location });
+            }
+          });
+        } catch (e) { console.error(`RRule Error for ${event.summary}:`, e); }
+      } else if (endDate >= now && startDate <= endLimit) {
+        results.push({ summary: event.summary, start: startDate, end: endDate, location: event.location });
+      }
+    }
+
+    const upcoming = results
+      .map(e => ({
+        summary: e.summary,
+        start: e.start.toISOString(),
+        end: e.end.toISOString(),
+        location: e.location || null
+      }))
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    res.json({ status: "success", data: upcoming });
+  } catch (error) {
+    console.error("Calendar Error:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
