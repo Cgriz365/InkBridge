@@ -220,7 +220,7 @@ app.post("/spotify/request", async (req, res) => {
 // --- ROUTE: CALENDAR ---
 app.post("/calendar", async (req, res) => {
   try {
-    const { uid, range } = req.body;
+    const { uid, range, url } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const settingsRef = db.collection("artifacts").doc(APP_ID)
@@ -231,9 +231,10 @@ app.post("/calendar", async (req, res) => {
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
 
     const { ical_url, calendar_range } = docSnap.data();
-    if (!ical_url) return res.status(400).json({ status: "error", message: "Calendar not connected" });
+    const queryUrl = url || ical_url;
+    if (!queryUrl) return res.status(400).json({ status: "error", message: "Calendar not connected" });
 
-    const events = await ical.async.fromURL(ical_url);
+    const events = await ical.async.fromURL(queryUrl);
     const now = new Date();
     let endLimit = new Date();
 
@@ -288,7 +289,7 @@ app.post("/calendar", async (req, res) => {
 // --- ROUTE: CANVAS ---
 app.post("/canvas", async (req, res) => {
   try {
-    const { uid, type } = req.body;
+    const { uid, type, domain, token } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const settingsRef = db.collection("artifacts").doc(APP_ID)
@@ -299,14 +300,18 @@ app.post("/canvas", async (req, res) => {
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
 
     let { canvas_token, canvas_domain } = docSnap.data();
-    if (!canvas_token || !canvas_domain) return res.status(400).json({ status: "error", message: "Canvas not connected" });
+
+    const queryToken = token || canvas_token;
+    let queryDomain = domain || canvas_domain;
+
+    if (!queryToken || !queryDomain) return res.status(400).json({ status: "error", message: "Canvas not connected" });
 
     // Clean domain input
-    canvas_domain = canvas_domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    queryDomain = queryDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
     if (type === "grades") {
-      const response = await fetch(`https://${canvas_domain}/api/v1/courses?enrollment_state=active&include[]=total_scores`, {
-        headers: { "Authorization": `Bearer ${canvas_token}` }
+      const response = await fetch(`https://${queryDomain}/api/v1/courses?enrollment_state=active&include[]=total_scores`, {
+        headers: { "Authorization": `Bearer ${queryToken}` }
       });
 
       if (!response.ok) {
@@ -327,8 +332,8 @@ app.post("/canvas", async (req, res) => {
     const endDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // Next 7 days
     const params = new URLSearchParams({ start_date: startDate, end_date: endDate, order: "asc" });
 
-    const response = await fetch(`https://${canvas_domain}/api/v1/planner/items?${params}`, {
-      headers: { "Authorization": `Bearer ${canvas_token}` }
+    const response = await fetch(`https://${queryDomain}/api/v1/planner/items?${params}`, {
+      headers: { "Authorization": `Bearer ${queryToken}` }
     });
 
     if (!response.ok) {
