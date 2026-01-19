@@ -21,6 +21,8 @@ const SPOTIFY_CLIENT_ID = defineString("SPOTIFY_CLIENT_ID");
 const SPOTIFY_CLIENT_SECRET = defineString("SPOTIFY_CLIENT_SECRET");
 const WEATHERAPI_KEY = defineString("WEATHERAPI_KEY");
 const FINNHUB_API_KEY = defineString("FINNHUB_API_KEY");
+const GOOGLE_MAPS_API_KEY = defineString("GOOGLE_MAPS_API_KEY");
+const NEWS_API_KEY = defineString("NEWS_API_KEY");
 
 const getSpotifyRedirectUri = () => {
   return `https://us-central1-${process.env.GCLOUD_PROJECT || "inkbase01"}.cloudfunctions.net/api/spotify/callback`;
@@ -419,6 +421,86 @@ app.post("/stock", async (req, res) => {
     });
   } catch (error) {
     console.error("Stock Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: TRAVEL ---
+app.post("/travel", async (req, res) => {
+  try {
+    const { uid, origin, destination, mode } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = db.collection("artifacts").doc(APP_ID)
+      .collection("users").doc(uid)
+      .collection("settings").doc("integrations");
+
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const settings = docSnap.data();
+    const queryOrigin = origin || settings.travel_origin;
+    const queryDest = destination || settings.travel_destination;
+    const queryMode = mode || settings.travel_mode || "driving";
+
+    if (!queryOrigin || !queryDest) {
+      return res.status(400).json({ status: "error", message: "Origin or Destination not set" });
+    }
+
+    const apiKey = settings.travel_api_key || GOOGLE_MAPS_API_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Google Maps API Key not configured" });
+
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(queryOrigin)}&destinations=${encodeURIComponent(queryDest)}&mode=${queryMode}&key=${apiKey}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Google Maps API Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    if (data.status !== "OK") throw new Error(`Google Maps API Error: ${data.status} - ${data.error_message || ""}`);
+
+    const element = data.rows[0].elements[0];
+    if (element.status !== "OK") return res.status(400).json({ status: "error", message: `Route not found: ${element.status}` });
+
+    res.json({ status: "success", data: { duration: element.duration.text, distance: element.distance.text, origin: data.origin_addresses[0], destination: data.destination_addresses[0], mode: queryMode } });
+  } catch (error) {
+    console.error("Travel Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: NEWS ---
+app.post("/news", async (req, res) => {
+  try {
+    const { uid, category } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = db.collection("artifacts").doc(APP_ID)
+      .collection("users").doc(uid)
+      .collection("settings").doc("integrations");
+
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const settings = docSnap.data();
+    const queryCategory = category || settings.news_category || "general";
+    const apiKey = settings.news_api_key || NEWS_API_KEY.value();
+
+    if (!apiKey) return res.status(500).json({ status: "error", message: "News API Key not configured" });
+
+    const response = await fetch(`https://newsapi.org/v2/top-headlines?country=us&category=${queryCategory}&apiKey=${apiKey}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`NewsAPI Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const articles = data.articles.slice(0, 5).map(a => ({ title: a.title, source: a.source.name }));
+    res.json({ status: "success", data: articles });
+  } catch (error) {
+    console.error("News Error:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
