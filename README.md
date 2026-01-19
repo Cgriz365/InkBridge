@@ -35,12 +35,12 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 | `/spotify/login` | GET | Initiates the OAuth login flow, redirecting the user to Spotify. |
 | `/spotify/callback` | GET | Handles the OAuth callback, exchanges the code for tokens, and saves them to Firestore. |
 | `/spotify/request` | POST | Proxies authenticated requests to the Spotify Web API (e.g., current playback). |
-| `/calendar` | POST | Fetches and parses the user's iCal feed, returning a filtered list of upcoming events. |
-| `/canvas` | POST | Proxies requests to the Canvas LMS API to retrieve upcoming assignments. |
-| `/weather` | POST | Fetches current weather conditions via WeatherAPI.com. |
-| `/stock` | POST | Fetches real-time stock quotes via Finnhub. |
-| `/travel` | POST | Fetches travel time and distance via Google Maps. |
-| `/news` | POST | Fetches top headlines via NewsAPI.org. |
+| `/calendar` | POST | Fetches and parses the user's iCal feed. Optional params: `range`, `url`. |
+| `/canvas` | POST | Proxies requests to the Canvas LMS API. Optional params: `type`, `domain`, `token`. |
+| `/weather` | POST | Fetches current weather conditions. Optional params: `location`. |
+| `/stock` | POST | Fetches real-time stock quotes. Optional params: `symbol`. |
+| `/travel` | POST | Fetches travel time and distance. Optional params: `origin`, `destination`, `mode`. |
+| `/news` | POST | Fetches top headlines. Optional params: `category`. |
 
 ## Frontend Analysis
 
