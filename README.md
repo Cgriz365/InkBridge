@@ -23,7 +23,7 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 
 ### Core Modules
 **Data Providers:**
-- **Live Data**: Time, Spotify, Calendar, Canvas LMS, Weather, Stock.
+- **Live Data**: Time, Spotify, Calendar, Canvas LMS, Weather, Stock, Travel, News.
 
 **Spotify Integration**: Implements the OAuth 2.0 Authorization Code Flow. It automatically handles token refreshing if the access token is expired before fetching playback state.
 
@@ -39,6 +39,8 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 | `/canvas` | POST | Proxies requests to the Canvas LMS API to retrieve upcoming assignments. |
 | `/weather` | POST | Fetches current weather conditions via WeatherAPI.com. |
 | `/stock` | POST | Fetches real-time stock quotes via Finnhub. |
+| `/travel` | POST | Fetches travel time and distance via Google Maps. |
+| `/news` | POST | Fetches top headlines via NewsAPI.org. |
 
 ## Frontend Analysis
 

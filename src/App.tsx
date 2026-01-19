@@ -9,7 +9,7 @@ import {
 import {
   Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
   Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
-  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings,
+  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper,
   type LucideIcon
 } from 'lucide-react';
 
@@ -35,6 +35,14 @@ interface IntegrationState {
   canvas_domain: string;
   canvas_token: string;
   spotify_enabled: boolean;
+  travel_enabled: boolean;
+  travel_origin: string;
+  travel_destination: string;
+  travel_mode: string;
+  travel_api_key: string;
+  news_enabled: boolean;
+  news_category: string;
+  news_api_key: string;
   [key: string]: string | boolean; // Index signature for dynamic access
 }
 
@@ -68,6 +76,8 @@ const AVAILABLE_SERVICES: Service[] = [
   { id: 'calendar', name: 'Google Calendar', icon: Calendar, description: 'Upcoming events from iCal feed.' },
   { id: 'canvas', name: 'Canvas LMS', icon: BookOpen, description: 'Assignments and due dates.' },
   { id: 'spotify', name: 'Spotify', icon: Music, description: 'Current playback information.' },
+  { id: 'travel', name: 'Travel Time', icon: MapPin, description: 'Commute time via Google Maps.' },
+  { id: 'news', name: 'News Headlines', icon: Newspaper, description: 'Top headlines via NewsAPI.org.' },
 ];
 
 // --- SUB-COMPONENTS ---
@@ -209,7 +219,15 @@ export default function InkBridge() {
     canvas_enabled: false,
     canvas_domain: "",
     canvas_token: "",
-    spotify_enabled: false
+    spotify_enabled: false,
+    travel_enabled: false,
+    travel_origin: "",
+    travel_destination: "",
+    travel_mode: "driving",
+    travel_api_key: "",
+    news_enabled: false,
+    news_category: "general",
+    news_api_key: ""
   });
 
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -236,6 +254,14 @@ export default function InkBridge() {
   // Stock State
   const [stockData, setStockData] = useState<any>(null);
   const [loadingStock, setLoadingStock] = useState(false);
+
+  // Travel State
+  const [travelData, setTravelData] = useState<any>(null);
+  const [loadingTravel, setLoadingTravel] = useState(false);
+
+  // News State
+  const [newsData, setNewsData] = useState<any>(null);
+  const [loadingNews, setLoadingNews] = useState(false);
 
   // NEW: Listen for Device Handshake
   useEffect(() => {
@@ -522,6 +548,64 @@ export default function InkBridge() {
     }
   };
 
+  const fetchTravel = async () => {
+    if (!user) return;
+    setLoadingTravel(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/travel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          origin: integrations.travel_origin,
+          destination: integrations.travel_destination,
+          mode: integrations.travel_mode
+        })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setTravelData(result.data);
+      } else {
+        console.error("Travel API Error:", result.message);
+        setTravelData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setTravelData(null);
+    } finally {
+      setLoadingTravel(false);
+    }
+  };
+
+  const fetchNews = async () => {
+    if (!user) return;
+    setLoadingNews(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/news`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid,
+          category: integrations.news_category
+        })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setNewsData(result.data);
+      } else {
+        console.error("News API Error:", result.message);
+        setNewsData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setNewsData(null);
+    } finally {
+      setLoadingNews(false);
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
@@ -555,6 +639,8 @@ export default function InkBridge() {
         activeIntegrations.push({ source: "spotify", status: "Not Connected" });
       }
     }
+    if (integrations.travel_enabled) activeIntegrations.push({ source: "travel", data: { duration: "24 min", distance: "12 mi" } });
+    if (integrations.news_enabled) activeIntegrations.push({ source: "news", data: { title: "Breaking News..." } });
 
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -982,8 +1068,92 @@ void loop() {
             </ActiveIntegrationCard>
           )}
 
+          {integrations.travel_enabled && (
+            <ActiveIntegrationCard
+              serviceId="travel"
+              isEnabled={integrations.travel_enabled as boolean}
+              onRemove={() => handleRemoveService('travel')}
+            >
+              <InputField label="Origin" value={integrations.travel_origin as string} field="travel_origin" onChange={handleInputChange} placeholder="e.g. 123 Home St, Denver CO" />
+              <InputField label="Destination" value={integrations.travel_destination as string} field="travel_destination" onChange={handleInputChange} placeholder="e.g. Work Office" />
+              <ToggleGroup 
+                label="Mode" 
+                value={integrations.travel_mode as string} 
+                field="travel_mode" 
+                onChange={handleInputChange} 
+                options={[
+                  { value: "driving", label: "Driving" },
+                  { value: "transit", label: "Transit" },
+                  { value: "walking", label: "Walking" },
+                  { value: "bicycling", label: "Bike" }
+                ]}
+              />
+              <InputField label="Google Maps API Key (Optional)" value={integrations.travel_api_key as string} field="travel_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
+              
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                    <button 
+                      onClick={fetchTravel} 
+                      disabled={loadingTravel}
+                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      {loadingTravel ? <RefreshCw size={14} className="animate-spin"/> : <MapPin size={14} />}
+                      Check Commute
+                    </button>
+                 </div>
+                 {travelData && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold">{travelData.duration}</div>
+                     <div className="text-[10px] text-stone-500 mt-1">{travelData.distance} to {travelData.destination}</div>
+                   </div>
+                 )}
+              </div>
+            </ActiveIntegrationCard>
+          )}
+
+          {integrations.news_enabled && (
+            <ActiveIntegrationCard
+              serviceId="news"
+              isEnabled={integrations.news_enabled as boolean}
+              onRemove={() => handleRemoveService('news')}
+            >
+              <ToggleGroup 
+                label="Category" 
+                value={integrations.news_category as string} 
+                field="news_category" 
+                onChange={handleInputChange} 
+                options={[
+                  { value: "general", label: "General" },
+                  { value: "technology", label: "Tech" },
+                  { value: "business", label: "Business" },
+                  { value: "science", label: "Science" }
+                ]}
+              />
+              <InputField label="NewsAPI Key (Optional)" value={integrations.news_api_key as string} field="news_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
+              
+              <div className="mt-4 pt-4 border-t border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                    <button 
+                      onClick={fetchNews} 
+                      disabled={loadingNews}
+                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                    >
+                      {loadingNews ? <RefreshCw size={14} className="animate-spin"/> : <Newspaper size={14} />}
+                      Check News
+                    </button>
+                 </div>
+                 {newsData && newsData.length > 0 && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold truncate">{newsData[0].title}</div>
+                     <div className="text-[10px] text-stone-500 mt-1">{newsData[0].source}</div>
+                   </div>
+                 )}
+              </div>
+            </ActiveIntegrationCard>
+          )}
+
           {/* Empty State */}
-          {!integrations.weather_enabled && !integrations.stock_enabled && !integrations.calendar_enabled && !integrations.canvas_enabled && !integrations.spotify_enabled && (
+          {!integrations.weather_enabled && !integrations.stock_enabled && !integrations.calendar_enabled && !integrations.canvas_enabled && !integrations.spotify_enabled && !integrations.travel_enabled && !integrations.news_enabled && (
             <div className="md:col-span-2 py-16 border-2 border-dashed border-stone-200 rounded-lg flex flex-col items-center justify-center text-black bg-stone-50/50">
               <Settings size={32} className="mb-3 opacity-20" />
               <p className="italic text-lg text-black">No services enabled.</p>
