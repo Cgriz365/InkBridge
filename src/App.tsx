@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
-  getFirestore, doc, setDoc, getDoc, collection, query, getDocs, onSnapshot
+  getFirestore, doc, setDoc, getDoc, collection, query, getDocs, onSnapshot, where
 } from 'firebase/firestore';
 import {
   getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, type User
@@ -9,7 +9,7 @@ import {
 import {
   Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
   Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
-  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper,
+  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown,
   type LucideIcon
 } from 'lucide-react';
 
@@ -79,6 +79,30 @@ const AVAILABLE_SERVICES: Service[] = [
   { id: 'travel', name: 'Travel Time', icon: MapPin, description: 'Commute time via Google Maps.' },
   { id: 'news', name: 'News Headlines', icon: Newspaper, description: 'Top headlines via NewsAPI.org.' },
 ];
+
+const INITIAL_INTEGRATIONS: IntegrationState = {
+  weather_enabled: false,
+  weather_city: "",
+  weather_api_key: "",
+  stock_enabled: false,
+  stock_symbol: "AAPL",
+  stock_api_key: "",
+  calendar_enabled: false,
+  ical_url: "",
+  calendar_range: "1d",
+  canvas_enabled: false,
+  canvas_domain: "",
+  canvas_token: "",
+  spotify_enabled: false,
+  travel_enabled: false,
+  travel_origin: "",
+  travel_destination: "",
+  travel_mode: "driving",
+  travel_api_key: "",
+  news_enabled: false,
+  news_category: "general",
+  news_api_key: ""
+};
 
 // --- SUB-COMPONENTS ---
 // Defined outside the main component to prevent re-renders and scope issues
@@ -202,33 +226,12 @@ export default function InkBridge() {
   const [deviceIdInput, setDeviceIdInput] = useState("");
   const [linkStatus, setLinkStatus] = useState<string>("");
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
+  const [userDevices, setUserDevices] = useState<string[]>([]);
   const [deviceStatus, setDeviceStatus] = useState<'linked' | 'online'>('linked');
   const [lastSync, setLastSync] = useState<number | null>(null);
 
   // Integrations State
-  const [integrations, setIntegrations] = useState<IntegrationState>({
-    weather_enabled: false,
-    weather_city: "",
-    weather_api_key: "",
-    stock_enabled: false,
-    stock_symbol: "AAPL",
-    stock_api_key: "",
-    calendar_enabled: false,
-    ical_url: "",
-    calendar_range: "1d",
-    canvas_enabled: false,
-    canvas_domain: "",
-    canvas_token: "",
-    spotify_enabled: false,
-    travel_enabled: false,
-    travel_origin: "",
-    travel_destination: "",
-    travel_mode: "driving",
-    travel_api_key: "",
-    news_enabled: false,
-    news_category: "general",
-    news_api_key: ""
-  });
+  const [integrations, setIntegrations] = useState<IntegrationState>(INITIAL_INTEGRATIONS);
 
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
@@ -266,6 +269,10 @@ export default function InkBridge() {
   // NEW: Listen for Device Handshake
   useEffect(() => {
     if (!activeDeviceId || !user) return;
+
+    // Reset status when switching devices
+    setDeviceStatus('linked');
+    setLastSync(null);
 
     const deviceRef = doc(db, "artifacts", appId, "devices", activeDeviceId);
 
@@ -312,13 +319,6 @@ export default function InkBridge() {
           setUserApiKey(newKey);
         }
 
-        // 2. Get Integrations Settings
-        const settingsRef = doc(db, "artifacts", appId, "users", uid, "settings", "integrations");
-        const settingsSnap = await getDoc(settingsRef);
-
-        if (settingsSnap.exists()) {
-          setIntegrations((prev) => ({ ...prev, ...settingsSnap.data() }));
-        }
 
         // 3. Ensure a Default Configuration exists
         const configsRef = collection(db, "artifacts", appId, "users", uid, "configurations");
@@ -340,6 +340,16 @@ export default function InkBridge() {
           setDefaultConfigId(newConfigRef.id);
         }
 
+        // 4. Check for linked devices
+        const devicesRef = collection(db, "artifacts", appId, "devices");
+        const qDevice = query(devicesRef, where("ownerId", "==", uid));
+        const deviceSnapshot = await getDocs(qDevice);
+
+        if (!deviceSnapshot.empty) {
+          const devices = deviceSnapshot.docs.map(doc => doc.id);
+          setUserDevices(devices);
+          setActiveDeviceId(devices[0]);
+        }
       } catch (e) {
         console.error("Load Error", e);
       }
@@ -355,15 +365,32 @@ export default function InkBridge() {
     return () => unsubscribe();
   }, []);
 
+  // NEW: Load Settings when Device Changes
+  useEffect(() => {
+    if (!user || !activeDeviceId) return;
+
+    const loadDeviceSettings = async () => {
+      const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", activeDeviceId);
+      const settingsSnap = await getDoc(settingsRef);
+
+      if (settingsSnap.exists()) {
+        setIntegrations((prev) => ({ ...prev, ...settingsSnap.data() }));
+      } else {
+        setIntegrations(INITIAL_INTEGRATIONS);
+      }
+    };
+    loadDeviceSettings();
+  }, [activeDeviceId, user]);
+
   // --- ACTIONS ---
   const handleLogin = async () => { await signInWithPopup(auth, new GoogleAuthProvider()); };
   const handleLogout = async () => { await signOut(auth); setUser(null); };
 
   const saveIntegrations = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setSaveState('saving');
     try {
-      const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", "integrations");
+      const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", activeDeviceId);
       await setDoc(settingsRef, integrations, { merge: true });
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2000);
@@ -402,6 +429,10 @@ export default function InkBridge() {
       }, { merge: true });
 
       setActiveDeviceId(cleanId);
+      setUserDevices(prev => {
+        if (prev.includes(cleanId)) return prev;
+        return [...prev, cleanId];
+      });
       setLastSync(timestamp);
       setLinkStatus(`Success! Device ${cleanId} linked.`);
       setDeviceIdInput("");
@@ -411,13 +442,13 @@ export default function InkBridge() {
   };
 
   const handleSpotifyLogin = () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
-    window.location.href = `${apiUrl}/spotify/login?uid=${user.uid}&redirect=${encodeURIComponent(window.location.href)}`;
+    window.location.href = `${apiUrl}/spotify/login?uid=${user.uid}&device_id=${activeDeviceId}&redirect=${encodeURIComponent(window.location.href)}`;
   };
 
   const fetchSpotifyPlayback = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setLoadingSpotify(true);
     try {
       const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
@@ -426,6 +457,7 @@ export default function InkBridge() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           uid: user.uid,
+          device_id: activeDeviceId,
           endpoint: 'me/player/currently-playing',
           method: 'GET'
         })
@@ -446,7 +478,7 @@ export default function InkBridge() {
   };
 
   const fetchCalendarEvents = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setLoadingCalendar(true);
     try {
       const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
@@ -455,6 +487,7 @@ export default function InkBridge() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           uid: user.uid,
+          device_id: activeDeviceId,
           range: integrations.calendar_range
         })
       });
@@ -474,14 +507,14 @@ export default function InkBridge() {
   };
 
   const fetchCanvasAssignments = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setLoadingCanvas(true);
     try {
       const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
       const response = await fetch(`${apiUrl}/canvas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid })
+        body: JSON.stringify({ uid: user.uid, device_id: activeDeviceId })
       });
       const result = await response.json();
       if (result.status === 'success') {
@@ -499,14 +532,14 @@ export default function InkBridge() {
   };
 
   const fetchWeather = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setLoadingWeather(true);
     try {
       const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
       const response = await fetch(`${apiUrl}/weather`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid })
+        body: JSON.stringify({ uid: user.uid, device_id: activeDeviceId })
       });
       const result = await response.json();
       if (result.status === 'success') {
@@ -524,14 +557,14 @@ export default function InkBridge() {
   };
 
   const fetchStock = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setLoadingStock(true);
     try {
       const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
       const response = await fetch(`${apiUrl}/stock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid })
+        body: JSON.stringify({ uid: user.uid, device_id: activeDeviceId })
       });
       const result = await response.json();
       if (result.status === 'success') {
@@ -549,7 +582,7 @@ export default function InkBridge() {
   };
 
   const fetchTravel = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setLoadingTravel(true);
     try {
       const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
@@ -558,6 +591,7 @@ export default function InkBridge() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           uid: user.uid,
+          device_id: activeDeviceId,
           origin: integrations.travel_origin,
           destination: integrations.travel_destination,
           mode: integrations.travel_mode
@@ -579,7 +613,7 @@ export default function InkBridge() {
   };
 
   const fetchNews = async () => {
-    if (!user) return;
+    if (!user || !activeDeviceId) return;
     setLoadingNews(true);
     try {
       const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
@@ -588,6 +622,7 @@ export default function InkBridge() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           uid: user.uid,
+          device_id: activeDeviceId,
           category: integrations.news_category
         })
       });
@@ -664,9 +699,26 @@ export default function InkBridge() {
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <div className="text-xs text-black font-mono border border-stone-200 rounded p-1 inline-block">
-                      ID: {activeDeviceId}
-                    </div>
+                    {userDevices.length > 1 ? (
+                      <div className="relative">
+                        <select
+                          value={activeDeviceId || ""}
+                          onChange={(e) => setActiveDeviceId(e.target.value)}
+                          className="appearance-none text-xs text-black font-mono border border-stone-200 rounded pl-2 pr-6 py-1 bg-stone-50 outline-none cursor-pointer hover:border-stone-400 transition-colors"
+                        >
+                          {userDevices.map(id => (
+                            <option key={id} value={id}>{id}</option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-stone-500">
+                          <ChevronDown size={12} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-black font-mono border border-stone-200 rounded p-1 inline-block">
+                        ID: {activeDeviceId}
+                      </div>
+                    )}
                     {deviceStatus === 'linked' && (
                        <span className="text-[10px] text-stone-400 italic">Waiting for connection...</span>
                     )}
