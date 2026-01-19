@@ -16,6 +16,29 @@ app.use(express.json());
 // CONSTANTS
 const APP_ID = "default-app-id";
 
+// --- HELPER ---
+const getSettingsRef = (uid, deviceId) => {
+  const docId = deviceId || "integrations";
+  return db.collection("artifacts").doc(APP_ID)
+    .collection("users").doc(uid)
+    .collection("settings").doc(docId);
+};
+
+// --- MIDDLEWARE: DEVICE HEARTBEAT ---
+const updateHeartbeat = async (req, res, next) => {
+  const deviceId = req.body.device_id || req.query.device_id || req.headers['x-device-id'];
+  if (deviceId) {
+    const cleanId = deviceId.trim().toUpperCase().replace(/:/g, '');
+    // Fire and forget update to minimize latency
+    db.collection('artifacts').doc(APP_ID).collection('devices').doc(cleanId).update({
+      lastHandshake: FieldValue.serverTimestamp()
+    }).catch(err => console.log("Heartbeat update failed silently", err));
+  }
+  next();
+};
+
+app.use(updateHeartbeat);
+
 // --- SPOTIFY CONFIGURATION ---
 const SPOTIFY_CLIENT_ID = defineString("SPOTIFY_CLIENT_ID");
 const SPOTIFY_CLIENT_SECRET = defineString("SPOTIFY_CLIENT_SECRET");
@@ -29,8 +52,8 @@ const getSpotifyRedirectUri = () => {
 };
 
 // --- DATA PROVIDERS ---
-const refreshSpotifyToken = async (uid, refreshToken) => {
-  console.log(`Refreshing Spotify token for UID: ${uid}`);
+const refreshSpotifyToken = async (uid, refreshToken, deviceId) => {
+  console.log(`Refreshing Spotify token for UID: ${uid} Device: ${deviceId}`);
   const params = new URLSearchParams();
   params.append('grant_type', 'refresh_token');
   params.append('refresh_token', refreshToken);
@@ -57,19 +80,14 @@ const refreshSpotifyToken = async (uid, refreshToken) => {
   };
   if (data.refresh_token) updates.spotify_refresh_token = data.refresh_token;
 
-  await db.collection('artifacts').doc(APP_ID)
-    .collection('users').doc(uid)
-    .collection('settings').doc('integrations')
-    .set(updates, { merge: true });
+  await getSettingsRef(uid, deviceId).set(updates, { merge: true });
   console.log(`Spotify token refreshed successfully for UID: ${uid}`);
 
   return data.access_token;
 };
 
-const makeSpotifyRequest = async (uid, endpoint, method = "GET", body = null) => {
-  const settingsRef = db.collection("artifacts").doc(APP_ID)
-    .collection("users").doc(uid)
-    .collection("settings").doc("integrations");
+const makeSpotifyRequest = async (uid, endpoint, method = "GET", body = null, deviceId = null) => {
+  const settingsRef = getSettingsRef(uid, deviceId);
 
   const docSnap = await settingsRef.get();
   if (!docSnap.exists) throw new Error("User settings not found");
@@ -83,7 +101,7 @@ const makeSpotifyRequest = async (uid, endpoint, method = "GET", body = null) =>
   // Check if token is expired or expiring in the next 5 minutes
   if (Date.now() > (spotify_token_expiry - 300000)) {
     console.log(`Token expired for ${uid}, refreshing...`);
-    spotify_access_token = await refreshSpotifyToken(uid, spotify_refresh_token);
+    spotify_access_token = await refreshSpotifyToken(uid, spotify_refresh_token, deviceId);
   }
 
   const options = {
@@ -111,8 +129,10 @@ const makeSpotifyRequest = async (uid, endpoint, method = "GET", body = null) =>
 // --- ROUTE: DEVICE SETUP ---
 app.get('/setup', async (req, res) => {
   try {
-    const deviceId = req.headers['x-device-id'] || req.query.device_id;
+    let deviceId = req.headers['x-device-id'] || req.query.device_id;
     if (!deviceId) return res.status(400).json({ status: "error", message: "Missing Device ID" });
+
+    deviceId = deviceId.trim().toUpperCase().replace(/:/g, '');
 
     const deviceRef = db.collection('artifacts').doc(APP_ID).collection('devices').doc(deviceId);
     const deviceSnap = await deviceRef.get();
@@ -142,12 +162,13 @@ app.get('/setup', async (req, res) => {
 // --- ROUTE: SPOTIFY AUTH ---
 app.get('/spotify/login', (req, res) => {
   const uid = req.query.uid;
+  const deviceId = req.query.device_id;
   console.log(`Initiating Spotify login for UID: ${uid}`);
   const redirectUrl = req.query.redirect || "http://localhost:5173";
   if (!uid) return res.status(400).send("Missing UID");
 
   const scope = 'user-read-playback-state user-read-currently-playing';
-  const state = JSON.stringify({ uid, redirectUrl });
+  const state = JSON.stringify({ uid, redirectUrl, deviceId });
 
   const query = new URLSearchParams({
     response_type: 'code',
@@ -170,7 +191,7 @@ app.get('/spotify/callback', async (req, res) => {
     return res.redirect('/?error=state_mismatch');
   }
 
-  const { uid, redirectUrl } = JSON.parse(state);
+  const { uid, redirectUrl, deviceId } = JSON.parse(state);
   console.log(`Processing callback for UID: ${uid}, Redirect: ${redirectUrl}`);
 
   try {
@@ -195,8 +216,7 @@ app.get('/spotify/callback', async (req, res) => {
     }
     const data = await response.json();
 
-    await db.collection('artifacts').doc(APP_ID).collection('users').doc(uid).collection('settings').doc('integrations')
-      .set({ spotify_access_token: data.access_token, spotify_refresh_token: data.refresh_token, spotify_token_expiry: Date.now() + (data.expires_in * 1000), spotify_enabled: true }, { merge: true });
+    await getSettingsRef(uid, deviceId).set({ spotify_access_token: data.access_token, spotify_refresh_token: data.refresh_token, spotify_token_expiry: Date.now() + (data.expires_in * 1000), spotify_enabled: true }, { merge: true });
 
     console.log("Spotify token exchange successful, redirecting...");
     res.redirect(redirectUrl);
@@ -205,11 +225,11 @@ app.get('/spotify/callback', async (req, res) => {
 
 app.post("/spotify/request", async (req, res) => {
   try {
-    const { uid, endpoint, method, body } = req.body;
+    const { uid, endpoint, method, body, device_id } = req.body;
     if (!uid || !endpoint) {
       return res.status(400).json({ status: "error", message: "Missing uid or endpoint" });
     }
-    const data = await makeSpotifyRequest(uid, endpoint, method, body);
+    const data = await makeSpotifyRequest(uid, endpoint, method, body, device_id);
     res.json({ status: "success", data });
   } catch (error) {
     console.error("Spotify Proxy Error:", error);
@@ -220,12 +240,10 @@ app.post("/spotify/request", async (req, res) => {
 // --- ROUTE: CALENDAR ---
 app.post("/calendar", async (req, res) => {
   try {
-    const { uid, range, url } = req.body;
+    const { uid, range, url, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
-    const settingsRef = db.collection("artifacts").doc(APP_ID)
-      .collection("users").doc(uid)
-      .collection("settings").doc("integrations");
+    const settingsRef = getSettingsRef(uid, device_id);
 
     const docSnap = await settingsRef.get();
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
@@ -289,12 +307,10 @@ app.post("/calendar", async (req, res) => {
 // --- ROUTE: CANVAS ---
 app.post("/canvas", async (req, res) => {
   try {
-    const { uid, type, domain, token } = req.body;
+    const { uid, type, domain, token, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
-    const settingsRef = db.collection("artifacts").doc(APP_ID)
-      .collection("users").doc(uid)
-      .collection("settings").doc("integrations");
+    const settingsRef = getSettingsRef(uid, device_id);
 
     const docSnap = await settingsRef.get();
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
@@ -356,12 +372,10 @@ app.post("/canvas", async (req, res) => {
 // --- ROUTE: WEATHER ---
 app.post("/weather", async (req, res) => {
   try {
-    const { uid, location } = req.body;
+    const { uid, location, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
-    const settingsRef = db.collection("artifacts").doc(APP_ID)
-      .collection("users").doc(uid)
-      .collection("settings").doc("integrations");
+    const settingsRef = getSettingsRef(uid, device_id);
 
     const docSnap = await settingsRef.get();
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
@@ -390,12 +404,10 @@ app.post("/weather", async (req, res) => {
 // --- ROUTE: STOCK ---
 app.post("/stock", async (req, res) => {
   try {
-    const { uid, symbol } = req.body;
+    const { uid, symbol, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
-    const settingsRef = db.collection("artifacts").doc(APP_ID)
-      .collection("users").doc(uid)
-      .collection("settings").doc("integrations");
+    const settingsRef = getSettingsRef(uid, device_id);
 
     const docSnap = await settingsRef.get();
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
@@ -433,12 +445,10 @@ app.post("/stock", async (req, res) => {
 // --- ROUTE: TRAVEL ---
 app.post("/travel", async (req, res) => {
   try {
-    const { uid, origin, destination, mode } = req.body;
+    const { uid, origin, destination, mode, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
-    const settingsRef = db.collection("artifacts").doc(APP_ID)
-      .collection("users").doc(uid)
-      .collection("settings").doc("integrations");
+    const settingsRef = getSettingsRef(uid, device_id);
 
     const docSnap = await settingsRef.get();
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
@@ -479,12 +489,10 @@ app.post("/travel", async (req, res) => {
 // --- ROUTE: NEWS ---
 app.post("/news", async (req, res) => {
   try {
-    const { uid, category } = req.body;
+    const { uid, category, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
-    const settingsRef = db.collection("artifacts").doc(APP_ID)
-      .collection("users").doc(uid)
-      .collection("settings").doc("integrations");
+    const settingsRef = getSettingsRef(uid, device_id);
 
     const docSnap = await settingsRef.get();
     if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
