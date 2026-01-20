@@ -220,7 +220,6 @@ export default function InkBridge() {
   // InkBridge Data
   const [userApiKey, setUserApiKey] = useState<string>("");
   const [showInkKey, setShowInkKey] = useState(false);
-  const [defaultConfigId, setDefaultConfigId] = useState<string | null>(null);
 
   // Device Linking
   const [deviceIdInput, setDeviceIdInput] = useState("");
@@ -319,28 +318,7 @@ export default function InkBridge() {
           setUserApiKey(newKey);
         }
 
-
-        // 3. Ensure a Default Configuration exists
-        const configsRef = collection(db, "artifacts", appId, "users", uid, "configurations");
-        const q = query(configsRef);
-        const querySnapshot = await getDocs(q);
-
-        if (!querySnapshot.empty) {
-          setDefaultConfigId(querySnapshot.docs[0].id);
-        } else {
-          const newConfigRef = doc(collection(db, "artifacts", appId, "users", uid, "configurations"));
-          const newConfig = {
-            name: "Default",
-            ownerId: uid,
-            created: Date.now(),
-            screens: [{ id: "s1", name: "Home", widgets: [] }],
-            device_config: { width: 400, height: 300, sleep_seconds: 900 }
-          };
-          await setDoc(newConfigRef, newConfig);
-          setDefaultConfigId(newConfigRef.id);
-        }
-
-        // 4. Check for linked devices
+        // 2. Check for linked devices
         const devicesRef = collection(db, "artifacts", appId, "devices");
         const qDevice = query(devicesRef, where("ownerId", "==", uid));
         const deviceSnapshot = await getDocs(qDevice);
@@ -414,16 +392,25 @@ export default function InkBridge() {
   }, [integrations, loading, user]);
 
   const registerDevice = async () => {
-    if (!user || !deviceIdInput || !defaultConfigId) return;
+    if (!user || !deviceIdInput) return;
     const cleanId = deviceIdInput.trim().toUpperCase().replace(/:/g, '');
 
     try {
+      // 1. Create the initial settings document (Fixes 404 "User settings not found")
+      const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", cleanId);
+      await setDoc(settingsRef, {
+        uid: user.uid, // Save UID here for easier database visibility
+        device_id: cleanId,
+        created_at: Date.now()
+      }, { merge: true });
+
+      // 2. Link Device to User (Fixes null UID in /setup)
       const deviceDocRef = doc(db, "artifacts", appId, "devices", cleanId);
       const timestamp = Date.now();
       await setDoc(deviceDocRef, {
+        uid: user.uid, // Required for the /setup endpoint to return the correct UID
         ownerId: user.uid,
         apiKey: userApiKey,
-        activeConfigId: defaultConfigId,
         friendlyUserId: user.displayName || "User",
         registeredAt: timestamp
       }, { merge: true });
