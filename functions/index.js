@@ -149,6 +149,7 @@ app.get('/setup', async (req, res) => {
     const deviceData = deviceSnap.data();
     return res.json({
       status: "success",
+      uid: deviceData.uid || null,
       api_key: deviceData.apiKey,
       friendly_user_id: deviceData.friendlyUserId || "User",
       message: "Setup successful"
@@ -167,7 +168,8 @@ app.get('/spotify/login', (req, res) => {
   const redirectUrl = req.query.redirect || "http://localhost:5173";
   if (!uid) return res.status(400).send("Missing UID");
 
-  const scope = 'user-read-playback-state user-read-currently-playing';
+  // ADDED: user-modify-playback-state
+  const scope = 'user-read-playback-state user-read-currently-playing user-modify-playback-state';
   const state = JSON.stringify({ uid, redirectUrl, deviceId });
 
   const query = new URLSearchParams({
@@ -466,7 +468,7 @@ app.post("/travel", async (req, res) => {
     if (!apiKey) return res.status(500).json({ status: "error", message: "Google Maps API Key not configured" });
 
     const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(queryOrigin)}&destinations=${encodeURIComponent(queryDest)}&mode=${queryMode}&key=${apiKey}`;
-    
+
     const response = await fetch(url);
     if (!response.ok) {
       const errText = await response.text();
