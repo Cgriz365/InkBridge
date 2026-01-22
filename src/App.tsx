@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import {
   Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
-  Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music,
+  Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music, Moon, Clock, Bitcoin,
   Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown,
   type LucideIcon
 } from 'lucide-react';
@@ -19,15 +19,27 @@ interface Service {
   name: string;
   icon: LucideIcon;
   description: string;
+  configOptions?: string[];
 }
 
 interface IntegrationState {
   weather_enabled: boolean;
   weather_city: string;
   weather_api_key: string;
+  astronomy_enabled: boolean;
+  astronomy_city: string;
+  astronomy_api_key: string;
+  forecast_enabled: boolean;
+  forecast_city: string;
+  history_enabled: boolean;
+  history_city: string;
+  history_date: string;
   stock_enabled: boolean;
   stock_symbol: string;
   stock_api_key: string;
+  crypto_enabled: boolean;
+  crypto_symbol: string;
+  crypto_api_key: string;
   calendar_enabled: boolean;
   ical_url: string;
   calendar_range: string;
@@ -71,22 +83,37 @@ const appId = "default-app-id";
 
 // --- CONSTANTS ---
 const AVAILABLE_SERVICES: Service[] = [
-  { id: 'weather', name: 'Weather', icon: Cloud, description: 'Current conditions via WeatherAPI.com.' },
-  { id: 'stock', name: 'Stocks', icon: TrendingUp, description: 'Track market prices via Finnhub.' },
-  { id: 'calendar', name: 'Google Calendar', icon: Calendar, description: 'Upcoming events from iCal feed.' },
-  { id: 'canvas', name: 'Canvas LMS', icon: BookOpen, description: 'Assignments and due dates.' },
-  { id: 'spotify', name: 'Spotify', icon: Music, description: 'Current playback information.' },
-  { id: 'travel', name: 'Travel Time', icon: MapPin, description: 'Commute time via Google Maps.' },
-  { id: 'news', name: 'News Headlines', icon: Newspaper, description: 'Top headlines via NewsAPI.org.' },
+  { id: 'weather', name: 'Current Weather', icon: Cloud, description: 'Current conditions via WeatherAPI.com.', configOptions: ['Location', 'API Key'] },
+  { id: 'forecast', name: '3 Day Forecast', icon: Cloud, description: '3-Day weather forecast.', configOptions: ['Location', 'API Key'] },
+  { id: 'history', name: 'Weather History', icon: Clock, description: 'Historical weather data.', configOptions: ['Location', 'End Date', 'API Key'] },
+  { id: 'astronomy', name: 'Astronomy', icon: Moon, description: 'Sunrise, sunset, and moon phases.', configOptions: ['Location', 'API Key'] },
+  { id: 'stock', name: 'Stocks', icon: TrendingUp, description: 'Track market prices via Finnhub.', configOptions: ['Stock Symbol', 'API Key'] },
+  { id: 'crypto', name: 'Crypto', icon: Bitcoin, description: 'Track cryptocurrency prices via CoinMarketCap.', configOptions: ['Crypto Symbol', 'API Key'] },
+  { id: 'calendar', name: 'Google Calendar', icon: Calendar, description: 'Upcoming events from iCal feed.', configOptions: ['iCal URL', 'Date Range'] },
+  { id: 'canvas', name: 'Canvas LMS', icon: BookOpen, description: 'Assignments and due dates.', configOptions: ['Canvas Domain', 'Access Token'] },
+  { id: 'spotify', name: 'Spotify', icon: Music, description: 'Current playback information.', configOptions: ['Spotify Account'] },
+  { id: 'travel', name: 'Travel Time', icon: MapPin, description: 'Commute time via Google Maps.', configOptions: ['Origin', 'Destination', 'Mode', 'API Key'] },
+  { id: 'news', name: 'News Headlines', icon: Newspaper, description: 'Top headlines via NewsAPI.org.', configOptions: ['Category', 'API Key'] },
 ];
 
 const INITIAL_INTEGRATIONS: IntegrationState = {
   weather_enabled: false,
   weather_city: "",
   weather_api_key: "",
+  astronomy_enabled: false,
+  astronomy_city: "",
+  astronomy_api_key: "",
+  forecast_enabled: false,
+  forecast_city: "",
+  history_enabled: false,
+  history_city: "",
+  history_date: "",
   stock_enabled: false,
   stock_symbol: "AAPL",
   stock_api_key: "",
+  crypto_enabled: false,
+  crypto_symbol: "BTC",
+  crypto_api_key: "",
   calendar_enabled: false,
   ical_url: "",
   calendar_range: "1d",
@@ -122,18 +149,34 @@ const ServiceCard = ({ service, onAdd }: { service: Service; onAdd: () => void }
   return (
     <button
       onClick={onAdd}
-      className="flex items-start gap-4 p-4 bg-white hover:bg-stone-50 rounded-lg shadow-sm hover:shadow-md transition-all text-left group border border-stone-200 hover:border-stone-400 w-full"
+      className="relative flex items-start gap-4 p-4 bg-white hover:bg-stone-50 rounded-lg shadow-sm hover:shadow-md transition-all text-left group border border-stone-200 hover:border-stone-400 w-full overflow-hidden"
     >
-      <div className="p-3 bg-stone-50 rounded-md text-black group-hover:text-black transition-colors border border-stone-100">
+      <div className="p-3 bg-stone-50 rounded-md text-black group-hover:text-black transition-colors border border-stone-100 z-30">
         <Icon size={24} strokeWidth={1.5} />
       </div>
-      <div className="flex-1">
+      <div className="flex-1 z-10">
         <h3 className="font-bold text-black text-base mb-1">{service.name}</h3>
-        <p className="text-xs text-black leading-relaxed">{service.description}</p>
+        <p className="text-xs text-black leading-relaxed group-hover:opacity-0 transition-opacity duration-200">{service.description}</p>
       </div>
-      <div className="self-center opacity-0 group-hover:opacity-100 transition-opacity text-black">
+      <div className="self-center opacity-0 group-hover:opacity-100 transition-opacity text-black z-10">
         <Plus size={20} />
       </div>
+
+      {service.configOptions && (
+        <div className="absolute inset-0 bg-stone-50 p-4 flex flex-col justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-20">
+            <div className="ml-[60px]">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-1">Configuration Options</p>
+                <ul className="text-xs text-black space-y-0.5">
+                    {service.configOptions.map((opt, i) => (
+                        <li key={i} className="flex items-center gap-1.5">
+                            <div className="w-1 h-1 rounded-full bg-stone-400"></div>
+                            {opt}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+      )}
     </button>
   );
 };
@@ -174,6 +217,73 @@ const ToggleGroup = ({ label, value, field, onChange, options, subtext }: { labe
     {subtext && <p className="text-[10px] text-black mt-1 ml-1 italic">{subtext}</p>}
   </div>
 );
+
+const CollapsibleApiKeyInput = ({ label, value, field, onChange, placeholder, subtext }: { label: string; value: string; field: string; onChange: (f: string, v: string) => void; placeholder?: string; subtext?: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="mb-5 last:mb-0">
+      <div className="flex items-center justify-between mb-1.5 ml-1">
+        <label className="block text-[10px] uppercase tracking-wider font-bold text-black">
+          {label}
+        </label>
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="text-[10px] text-stone-400 hover:text-black flex items-center gap-1 transition-colors"
+        >
+          {isOpen ? <EyeOff size={12} /> : <Eye size={12} />}
+          {isOpen ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      {isOpen && (
+        <div className="animate-in fade-in slide-in-from-top-1">
+          <input
+            type="password"
+            value={value}
+            onChange={(e) => onChange(field, e.target.value)}
+            placeholder={placeholder}
+            className="w-full bg-stone-50 shadow-inner border border-stone-200 rounded-md px-3 py-2 text-sm text-black focus:ring-1 focus:ring-black focus:border-black outline-none transition-all placeholder:text-stone-400 font-mono"
+          />
+          {subtext && <p className="text-[10px] text-black mt-1 ml-1 italic">{subtext}</p>}
+        </div>
+      )}
+      {!isOpen && value && (
+        <div className="text-[10px] text-stone-500 italic ml-1">
+          Custom key configured
+        </div>
+      )}
+    </div>
+  );
+};
+
+const IntegrationSettings = ({ children, isConfigured, actions, results }: { children: React.ReactNode; isConfigured: boolean; actions: React.ReactNode; results?: React.ReactNode }) => {
+  const [isOpen, setIsOpen] = useState(!isConfigured);
+
+  return (
+    <>
+      {isOpen && (
+        <div className="mb-4 animate-in fade-in slide-in-from-top-1">
+          {children}
+        </div>
+      )}
+      <div className="mt-4 pt-4 border-t border-stone-100">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            {actions}
+          </div>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="text-[10px] uppercase font-bold tracking-wider text-stone-400 hover:text-black flex items-center gap-1 transition-colors"
+          >
+            <Settings size={12} />
+            {isOpen ? 'Hide Settings' : 'Show Settings'}
+          </button>
+        </div>
+        {results}
+      </div>
+    </>
+  );
+};
 
 const ActiveIntegrationCard = ({ serviceId, onRemove, isEnabled, children }: ActiveIntegrationCardProps) => {
   const service = AVAILABLE_SERVICES.find(s => s.id === serviceId);
@@ -253,9 +363,25 @@ export default function InkBridge() {
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loadingWeather, setLoadingWeather] = useState(false);
 
+  // Astronomy State
+  const [astronomyData, setAstronomyData] = useState<any>(null);
+  const [loadingAstronomy, setLoadingAstronomy] = useState(false);
+
+  // Forecast State
+  const [forecastData, setForecastData] = useState<any>(null);
+  const [loadingForecast, setLoadingForecast] = useState(false);
+
+  // History State
+  const [historyData, setHistoryData] = useState<any>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   // Stock State
   const [stockData, setStockData] = useState<any>(null);
   const [loadingStock, setLoadingStock] = useState(false);
+
+  // Crypto State
+  const [cryptoData, setCryptoData] = useState<any>(null);
+  const [loadingCrypto, setLoadingCrypto] = useState(false);
 
   // Travel State
   const [travelData, setTravelData] = useState<any>(null);
@@ -543,6 +669,81 @@ export default function InkBridge() {
     }
   };
 
+  const fetchAstronomy = async () => {
+    if (!user || !activeDeviceId) return;
+    setLoadingAstronomy(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/astronomy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, device_id: activeDeviceId })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setAstronomyData(result.data);
+      } else {
+        console.error("Astronomy API Error:", result.message);
+        setAstronomyData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setAstronomyData(null);
+    } finally {
+      setLoadingAstronomy(false);
+    }
+  };
+
+  const fetchForecast = async () => {
+    if (!user || !activeDeviceId) return;
+    setLoadingForecast(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/weather/forecast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, device_id: activeDeviceId })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setForecastData(result.data);
+      } else {
+        console.error("Forecast API Error:", result.message);
+        setForecastData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setForecastData(null);
+    } finally {
+      setLoadingForecast(false);
+    }
+  };
+
+  const fetchHistory = async () => {
+    if (!user || !activeDeviceId) return;
+    setLoadingHistory(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/weather/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, device_id: activeDeviceId })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setHistoryData(result.data);
+      } else {
+        console.error("History API Error:", result.message);
+        setHistoryData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setHistoryData(null);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   const fetchStock = async () => {
     if (!user || !activeDeviceId) return;
     setLoadingStock(true);
@@ -565,6 +766,31 @@ export default function InkBridge() {
       setStockData(null);
     } finally {
       setLoadingStock(false);
+    }
+  };
+
+  const fetchCrypto = async () => {
+    if (!user || !activeDeviceId) return;
+    setLoadingCrypto(true);
+    try {
+      const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+      const response = await fetch(`${apiUrl}/crypto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, device_id: activeDeviceId })
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        setCryptoData(result.data);
+      } else {
+        console.error("Crypto API Error:", result.message);
+        setCryptoData(null);
+      }
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      setCryptoData(null);
+    } finally {
+      setLoadingCrypto(false);
     }
   };
 
@@ -633,7 +859,27 @@ export default function InkBridge() {
   };
 
   const handleAddService = (serviceId: string) => {
-    setIntegrations((prev) => ({ ...prev, [`${serviceId}_enabled`]: true }));
+    setIntegrations((prev) => {
+      const newState = { ...prev, [`${serviceId}_enabled`]: true };
+
+      // Auto-populate location between WeatherAPI services
+      const weatherServices = ['weather', 'astronomy', 'forecast', 'history'];
+      const locationFields: {[key: string]: string} = {
+        weather: 'weather_city',
+        astronomy: 'astronomy_city',
+        forecast: 'forecast_city',
+        history: 'history_city'
+      };
+
+      if (weatherServices.includes(serviceId)) {
+        const existingLocation = newState.weather_city || newState.astronomy_city || newState.forecast_city || newState.history_city;
+        const targetField = locationFields[serviceId];
+        if (existingLocation && !newState[targetField]) {
+          newState[targetField] = existingLocation;
+        }
+      }
+      return newState;
+    });
     setIsBrowserOpen(false);
   };
 
@@ -651,7 +897,11 @@ export default function InkBridge() {
   const renderDashboardPage = () => {
     const activeIntegrations: any[] = [];
     if (integrations.weather_enabled) activeIntegrations.push({ source: "weather", data: { temp: "72°F", condition: "Sunny" } });
+    if (integrations.astronomy_enabled) activeIntegrations.push({ source: "astronomy", data: { phase: "Waxing Gibbous" } });
+    if (integrations.forecast_enabled) activeIntegrations.push({ source: "forecast", data: { high: "80°F", low: "60°F" } });
+    if (integrations.history_enabled) activeIntegrations.push({ source: "history", data: { date: "2023-01-01" } });
     if (integrations.stock_enabled) activeIntegrations.push({ source: "stock", data: { symbol: integrations.stock_symbol, price: "$150.00" } });
+    if (integrations.crypto_enabled) activeIntegrations.push({ source: "crypto", data: { symbol: integrations.crypto_symbol, price: "$30,000" } });
     if (integrations.calendar_enabled) activeIntegrations.push({ source: "calendar", count: 3, next: "Meeting 10am" });
     if (integrations.canvas_enabled) activeIntegrations.push({ source: "canvas", count: 2, due: "CS101 HW" });
     if (integrations.spotify_enabled) {
@@ -739,7 +989,7 @@ export default function InkBridge() {
                 {activeIntegrations.map((item, i) => (
                   <div key={`${item.source}-${i}`} className="px-4 py-2 bg-stone-50 border border-stone-200 rounded-md text-sm text-black flex items-center gap-2 font-medium">
                     <div className="w-2 h-2 rounded-full bg-stone-900 animate-pulse"></div>
-                    <span className="capitalize">{item.source}</span>
+                    <span>{AVAILABLE_SERVICES.find(s => s.id === item.source)?.name || item.source}</span>
                   </div>
                 ))}
               </div>
@@ -911,27 +1161,141 @@ void loop() {
               isEnabled={integrations.weather_enabled as boolean}
               onRemove={() => handleRemoveService('weather')}
             >
-              <InputField label="Location" value={integrations.weather_city as string} field="weather_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
-              <InputField label="API Key (Optional)" value={integrations.weather_api_key as string} field="weather_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
-              
-              <div className="mt-4 pt-4 border-t border-stone-100">
-                 <div className="flex items-center gap-3 mb-3">
-                    <button 
-                      onClick={fetchWeather} 
-                      disabled={loadingWeather}
-                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-                    >
-                      {loadingWeather ? <RefreshCw size={14} className="animate-spin"/> : <Cloud size={14} />}
-                      Check Weather
-                    </button>
-                 </div>
-                 {weatherData && (
+              <IntegrationSettings 
+                isConfigured={!!integrations.weather_city}
+                actions={
+                  <button 
+                    onClick={fetchWeather} 
+                    disabled={loadingWeather}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingWeather ? <RefreshCw size={14} className="animate-spin"/> : <Cloud size={14} />}
+                    Check Weather
+                  </button>
+                }
+                results={weatherData && (
                    <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
                      <div className="font-bold">{weatherData.city}</div>
                      <div className="text-[10px] text-stone-500 mt-1">{weatherData.temp}°F - {weatherData.condition} ({weatherData.description})</div>
                    </div>
                  )}
-              </div>
+              >
+                <InputField label="Location" value={integrations.weather_city as string} field="weather_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
+                <CollapsibleApiKeyInput label="API Key (Optional)" value={integrations.weather_api_key as string} field="weather_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
+            </ActiveIntegrationCard>
+          )}
+
+          {integrations.astronomy_enabled && (
+            <ActiveIntegrationCard
+              serviceId="astronomy"
+              isEnabled={integrations.astronomy_enabled as boolean}
+              onRemove={() => handleRemoveService('astronomy')}
+            >
+              <IntegrationSettings 
+                isConfigured={!!integrations.astronomy_city}
+                actions={
+                  <button 
+                    onClick={fetchAstronomy} 
+                    disabled={loadingAstronomy}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingAstronomy ? <RefreshCw size={14} className="animate-spin"/> : <Moon size={14} />}
+                    Check Astronomy
+                  </button>
+                }
+                results={astronomyData && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold">{astronomyData.location}</div>
+                     <div className="text-[10px] text-stone-500 mt-1 grid grid-cols-2 gap-x-4 gap-y-1">
+                        <span>Sun: {astronomyData.sunrise} - {astronomyData.sunset}</span>
+                        <span>Moon: {astronomyData.moon_phase} ({astronomyData.moon_illumination}%)</span>
+                        <span>Moonrise: {astronomyData.moonrise}</span>
+                        <span>Sun Up: {astronomyData.is_sun_up ? 'Yes' : 'No'}</span>
+                     </div>
+                   </div>
+                 )}
+              >
+                <InputField label="Location" value={integrations.astronomy_city as string} field="astronomy_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
+                <CollapsibleApiKeyInput label="API Key (Optional)" value={integrations.astronomy_api_key as string} field="astronomy_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
+            </ActiveIntegrationCard>
+          )}
+
+          {integrations.forecast_enabled && (
+            <ActiveIntegrationCard
+              serviceId="forecast"
+              isEnabled={integrations.forecast_enabled as boolean}
+              onRemove={() => handleRemoveService('forecast')}
+            >
+              <IntegrationSettings 
+                isConfigured={!!integrations.forecast_city}
+                actions={
+                  <button 
+                    onClick={fetchForecast} 
+                    disabled={loadingForecast}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingForecast ? <RefreshCw size={14} className="animate-spin"/> : <Cloud size={14} />}
+                    Check Forecast
+                  </button>
+                }
+                results={forecastData && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold mb-1">{forecastData.city}</div>
+                     <div className="space-y-1">
+                       {forecastData.forecast.map((day: any, i: number) => (
+                         <div key={i} className="flex justify-between text-[10px] text-stone-500">
+                           <span>{day.date}</span>
+                           <span>{day.max_temp}° / {day.min_temp}° - {day.condition}</span>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 )}
+              >
+                <InputField label="Location" value={integrations.forecast_city as string} field="forecast_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
+                <CollapsibleApiKeyInput label="API Key (Optional)" value={integrations.weather_api_key as string} field="weather_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
+            </ActiveIntegrationCard>
+          )}
+
+          {integrations.history_enabled && (
+            <ActiveIntegrationCard
+              serviceId="history"
+              isEnabled={integrations.history_enabled as boolean}
+              onRemove={() => handleRemoveService('history')}
+            >
+              <IntegrationSettings 
+                isConfigured={!!integrations.history_city}
+                actions={
+                  <button 
+                    onClick={fetchHistory} 
+                    disabled={loadingHistory}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingHistory ? <RefreshCw size={14} className="animate-spin"/> : <Clock size={14} />}
+                    Check History
+                  </button>
+                }
+                results={historyData && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold mb-1">{historyData.city} (Last 7 Days)</div>
+                     <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                       {historyData.history.map((day: any, i: number) => (
+                         <div key={i} className="flex justify-between text-[10px] text-stone-500">
+                           <span>{day.date}</span>
+                           <span>{day.avg_temp}°F - {day.condition}</span>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 )}
+              >
+                <InputField label="Location" value={integrations.history_city as string} field="history_city" onChange={handleInputChange} placeholder="e.g. Denver, London" />
+                <InputField label="End Date" value={integrations.history_date as string} field="history_date" onChange={handleInputChange} placeholder="YYYY-MM-DD" type="date" subtext="Fetches 7 days ending on this date." />
+                <CollapsibleApiKeyInput label="API Key (Optional)" value={integrations.weather_api_key as string} field="weather_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
             </ActiveIntegrationCard>
           )}
 
@@ -941,27 +1305,59 @@ void loop() {
               isEnabled={integrations.stock_enabled as boolean}
               onRemove={() => handleRemoveService('stock')}
             >
-              <InputField label="Stock Symbol" value={integrations.stock_symbol as string} field="stock_symbol" onChange={handleInputChange} placeholder="e.g. AAPL" subtext="Displays price and trend." />
-              <InputField label="Finnhub API Key (Optional)" value={integrations.stock_api_key as string} field="stock_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
-              
-              <div className="mt-4 pt-4 border-t border-stone-100">
-                 <div className="flex items-center gap-3 mb-3">
-                    <button 
-                      onClick={fetchStock} 
-                      disabled={loadingStock}
-                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-                    >
-                      {loadingStock ? <RefreshCw size={14} className="animate-spin"/> : <TrendingUp size={14} />}
-                      Check Stock
-                    </button>
-                 </div>
-                 {stockData && (
+              <IntegrationSettings 
+                isConfigured={!!integrations.stock_symbol}
+                actions={
+                  <button 
+                    onClick={fetchStock} 
+                    disabled={loadingStock}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingStock ? <RefreshCw size={14} className="animate-spin"/> : <TrendingUp size={14} />}
+                    Check Stock
+                  </button>
+                }
+                results={stockData && (
                    <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
                      <div className="font-bold">{stockData.symbol}</div>
                      <div className="text-[10px] text-stone-500 mt-1">${stockData.price} ({stockData.percent > 0 ? '+' : ''}{stockData.percent}%)</div>
                    </div>
                  )}
-              </div>
+              >
+                <InputField label="Stock Symbol" value={integrations.stock_symbol as string} field="stock_symbol" onChange={handleInputChange} placeholder="e.g. AAPL" subtext="Displays price and trend." />
+                <CollapsibleApiKeyInput label="Finnhub API Key (Optional)" value={integrations.stock_api_key as string} field="stock_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
+            </ActiveIntegrationCard>
+          )}
+
+          {integrations.crypto_enabled && (
+            <ActiveIntegrationCard
+              serviceId="crypto"
+              isEnabled={integrations.crypto_enabled as boolean}
+              onRemove={() => handleRemoveService('crypto')}
+            >
+              <IntegrationSettings 
+                isConfigured={!!integrations.crypto_symbol}
+                actions={
+                  <button 
+                    onClick={fetchCrypto} 
+                    disabled={loadingCrypto}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingCrypto ? <RefreshCw size={14} className="animate-spin"/> : <Bitcoin size={14} />}
+                    Check Crypto
+                  </button>
+                }
+                results={cryptoData && (
+                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                     <div className="font-bold">{cryptoData.name} ({cryptoData.symbol})</div>
+                     <div className="text-[10px] text-stone-500 mt-1">${cryptoData.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ({cryptoData.percent_change_24h.toFixed(2)}%)</div>
+                   </div>
+                 )}
+              >
+                <InputField label="Crypto Symbol" value={integrations.crypto_symbol as string} field="crypto_symbol" onChange={handleInputChange} placeholder="e.g. BTC, ETH" subtext="CoinMarketCap symbol." />
+                <CollapsibleApiKeyInput label="CMC API Key (Optional)" value={integrations.crypto_api_key as string} field="crypto_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
             </ActiveIntegrationCard>
           )}
 
@@ -971,33 +1367,19 @@ void loop() {
               isEnabled={integrations.calendar_enabled as boolean}
               onRemove={() => handleRemoveService('calendar')}
             >
-              <InputField label="iCal URL" value={integrations.ical_url as string} field="ical_url" onChange={handleInputChange} placeholder="https://calendar.google.com/..." subtext="Google Calendar > Settings > Public/Secret address in iCal format." />
-              <ToggleGroup 
-                label="Date Range" 
-                value={integrations.calendar_range || "1d"} 
-                field="calendar_range" 
-                onChange={handleInputChange} 
-                options={[
-                  { value: "1d", label: "1 Day" },
-                  { value: "3d", label: "3 Days" },
-                  { value: "1w", label: "1 Week" },
-                  { value: "1m", label: "1 Month" }
-                ]}
-                subtext="How far ahead to look for events."
-              />
-              
-              <div className="mt-4 pt-4 border-t border-stone-100">
-                 <div className="flex items-center gap-3 mb-3">
-                    <button 
-                      onClick={fetchCalendarEvents} 
-                      disabled={loadingCalendar}
-                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-                    >
-                      {loadingCalendar ? <RefreshCw size={14} className="animate-spin"/> : <Calendar size={14} />}
-                      Check Events
-                    </button>
-                 </div>
-                 {calendarEvents && (
+              <IntegrationSettings 
+                isConfigured={!!integrations.ical_url}
+                actions={
+                  <button 
+                    onClick={fetchCalendarEvents} 
+                    disabled={loadingCalendar}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingCalendar ? <RefreshCw size={14} className="animate-spin"/> : <Calendar size={14} />}
+                    Check Events
+                  </button>
+                }
+                results={calendarEvents && (
                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                      {calendarEvents.length > 0 ? (
                        calendarEvents.map((evt: any, idx: number) => (
@@ -1015,7 +1397,22 @@ void loop() {
                      )}
                    </div>
                  )}
-              </div>
+              >
+                <InputField label="iCal URL" value={integrations.ical_url as string} field="ical_url" onChange={handleInputChange} placeholder="https://calendar.google.com/..." subtext="Google Calendar > Settings > Public/Secret address in iCal format." />
+                <ToggleGroup 
+                  label="Date Range" 
+                  value={integrations.calendar_range || "1d"} 
+                  field="calendar_range" 
+                  onChange={handleInputChange} 
+                  options={[
+                    { value: "1d", label: "1 Day" },
+                    { value: "3d", label: "3 Days" },
+                    { value: "1w", label: "1 Week" },
+                    { value: "1m", label: "1 Month" }
+                  ]}
+                  subtext="How far ahead to look for events."
+                />
+              </IntegrationSettings>
             </ActiveIntegrationCard>
           )}
 
@@ -1025,21 +1422,19 @@ void loop() {
               isEnabled={integrations.canvas_enabled as boolean}
               onRemove={() => handleRemoveService('canvas')}
             >
-              <InputField label="Canvas Domain" value={integrations.canvas_domain as string} field="canvas_domain" onChange={handleInputChange} placeholder="canvas.instructure.com" subtext="Your school's Canvas URL." />
-              <InputField label="Access Token" value={integrations.canvas_token as string} field="canvas_token" onChange={handleInputChange} placeholder="7~..." type="password" subtext="Canvas > Account > Settings > New Access Token." />
-              
-              <div className="mt-4 pt-4 border-t border-stone-100">
-                 <div className="flex items-center gap-3 mb-3">
-                    <button 
-                      onClick={fetchCanvasAssignments} 
-                      disabled={loadingCanvas}
-                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-                    >
-                      {loadingCanvas ? <RefreshCw size={14} className="animate-spin"/> : <BookOpen size={14} />}
-                      Check Assignments
-                    </button>
-                 </div>
-                 {canvasAssignments && (
+              <IntegrationSettings 
+                isConfigured={!!integrations.canvas_token}
+                actions={
+                  <button 
+                    onClick={fetchCanvasAssignments} 
+                    disabled={loadingCanvas}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingCanvas ? <RefreshCw size={14} className="animate-spin"/> : <BookOpen size={14} />}
+                    Check Assignments
+                  </button>
+                }
+                results={canvasAssignments && (
                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                      {canvasAssignments.length > 0 ? (
                        canvasAssignments.map((item: any, idx: number) => (
@@ -1058,7 +1453,10 @@ void loop() {
                      )}
                    </div>
                  )}
-              </div>
+              >
+                <InputField label="Canvas Domain" value={integrations.canvas_domain as string} field="canvas_domain" onChange={handleInputChange} placeholder="canvas.instructure.com" subtext="Your school's Canvas URL." />
+                <InputField label="Access Token" value={integrations.canvas_token as string} field="canvas_token" onChange={handleInputChange} placeholder="7~..." type="password" subtext="Canvas > Account > Settings > New Access Token." />
+              </IntegrationSettings>
             </ActiveIntegrationCard>
           )}
 
@@ -1113,40 +1511,41 @@ void loop() {
               isEnabled={integrations.travel_enabled as boolean}
               onRemove={() => handleRemoveService('travel')}
             >
-              <InputField label="Origin" value={integrations.travel_origin as string} field="travel_origin" onChange={handleInputChange} placeholder="e.g. 123 Home St, Denver CO" />
-              <InputField label="Destination" value={integrations.travel_destination as string} field="travel_destination" onChange={handleInputChange} placeholder="e.g. Work Office" />
-              <ToggleGroup 
-                label="Mode" 
-                value={integrations.travel_mode as string} 
-                field="travel_mode" 
-                onChange={handleInputChange} 
-                options={[
-                  { value: "driving", label: "Driving" },
-                  { value: "transit", label: "Transit" },
-                  { value: "walking", label: "Walking" },
-                  { value: "bicycling", label: "Bike" }
-                ]}
-              />
-              <InputField label="Google Maps API Key (Optional)" value={integrations.travel_api_key as string} field="travel_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
-              
-              <div className="mt-4 pt-4 border-t border-stone-100">
-                 <div className="flex items-center gap-3 mb-3">
-                    <button 
-                      onClick={fetchTravel} 
-                      disabled={loadingTravel}
-                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-                    >
-                      {loadingTravel ? <RefreshCw size={14} className="animate-spin"/> : <MapPin size={14} />}
-                      Check Commute
-                    </button>
-                 </div>
-                 {travelData && (
+              <IntegrationSettings 
+                isConfigured={!!(integrations.travel_origin && integrations.travel_destination)}
+                actions={
+                  <button 
+                    onClick={fetchTravel} 
+                    disabled={loadingTravel}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingTravel ? <RefreshCw size={14} className="animate-spin"/> : <MapPin size={14} />}
+                    Check Commute
+                  </button>
+                }
+                results={travelData && (
                    <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
                      <div className="font-bold">{travelData.duration}</div>
                      <div className="text-[10px] text-stone-500 mt-1">{travelData.distance} to {travelData.destination}</div>
                    </div>
                  )}
-              </div>
+              >
+                <InputField label="Origin" value={integrations.travel_origin as string} field="travel_origin" onChange={handleInputChange} placeholder="e.g. 123 Home St, Denver CO" />
+                <InputField label="Destination" value={integrations.travel_destination as string} field="travel_destination" onChange={handleInputChange} placeholder="e.g. Work Office" />
+                <ToggleGroup 
+                  label="Mode" 
+                  value={integrations.travel_mode as string} 
+                  field="travel_mode" 
+                  onChange={handleInputChange} 
+                  options={[
+                    { value: "driving", label: "Driving" },
+                    { value: "transit", label: "Transit" },
+                    { value: "walking", label: "Walking" },
+                    { value: "bicycling", label: "Bike" }
+                  ]}
+                />
+                <CollapsibleApiKeyInput label="Google Maps API Key (Optional)" value={integrations.travel_api_key as string} field="travel_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
             </ActiveIntegrationCard>
           )}
 
@@ -1156,43 +1555,44 @@ void loop() {
               isEnabled={integrations.news_enabled as boolean}
               onRemove={() => handleRemoveService('news')}
             >
-              <ToggleGroup 
-                label="Category" 
-                value={integrations.news_category as string} 
-                field="news_category" 
-                onChange={handleInputChange} 
-                options={[
-                  { value: "general", label: "General" },
-                  { value: "technology", label: "Tech" },
-                  { value: "business", label: "Business" },
-                  { value: "science", label: "Science" }
-                ]}
-              />
-              <InputField label="NewsAPI Key (Optional)" value={integrations.news_api_key as string} field="news_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" type="password" />
-              
-              <div className="mt-4 pt-4 border-t border-stone-100">
-                 <div className="flex items-center gap-3 mb-3">
-                    <button 
-                      onClick={fetchNews} 
-                      disabled={loadingNews}
-                      className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-                    >
-                      {loadingNews ? <RefreshCw size={14} className="animate-spin"/> : <Newspaper size={14} />}
-                      Check News
-                    </button>
-                 </div>
-                 {newsData && newsData.length > 0 && (
+              <IntegrationSettings 
+                isConfigured={true}
+                actions={
+                  <button 
+                    onClick={fetchNews} 
+                    disabled={loadingNews}
+                    className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                  >
+                    {loadingNews ? <RefreshCw size={14} className="animate-spin"/> : <Newspaper size={14} />}
+                    Check News
+                  </button>
+                }
+                results={newsData && newsData.length > 0 && (
                    <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
                      <div className="font-bold truncate">{newsData[0].title}</div>
                      <div className="text-[10px] text-stone-500 mt-1">{newsData[0].source}</div>
                    </div>
                  )}
-              </div>
+              >
+                <ToggleGroup 
+                  label="Category" 
+                  value={integrations.news_category as string} 
+                  field="news_category" 
+                  onChange={handleInputChange} 
+                  options={[
+                    { value: "general", label: "General" },
+                    { value: "technology", label: "Tech" },
+                    { value: "business", label: "Business" },
+                    { value: "science", label: "Science" }
+                  ]}
+                />
+                <CollapsibleApiKeyInput label="NewsAPI Key (Optional)" value={integrations.news_api_key as string} field="news_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
+              </IntegrationSettings>
             </ActiveIntegrationCard>
           )}
 
           {/* Empty State */}
-          {!integrations.weather_enabled && !integrations.stock_enabled && !integrations.calendar_enabled && !integrations.canvas_enabled && !integrations.spotify_enabled && !integrations.travel_enabled && !integrations.news_enabled && (
+          {!integrations.weather_enabled && !integrations.astronomy_enabled && !integrations.forecast_enabled && !integrations.history_enabled && !integrations.stock_enabled && !integrations.crypto_enabled && !integrations.calendar_enabled && !integrations.canvas_enabled && !integrations.spotify_enabled && !integrations.travel_enabled && !integrations.news_enabled && (
             <div className="md:col-span-2 py-16 border-2 border-dashed border-stone-200 rounded-lg flex flex-col items-center justify-center text-black bg-stone-50/50">
               <Settings size={32} className="mb-3 opacity-20" />
               <p className="italic text-lg text-black">No services enabled.</p>

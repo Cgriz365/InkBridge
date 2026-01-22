@@ -46,6 +46,7 @@ const WEATHERAPI_KEY = defineString("WEATHERAPI_KEY");
 const FINNHUB_API_KEY = defineString("FINNHUB_API_KEY");
 const GOOGLE_MAPS_API_KEY = defineString("GOOGLE_MAPS_API_KEY");
 const NEWS_API_KEY = defineString("NEWS_API_KEY");
+const COINMARKETCAP_API_KEY = defineString("COINMARKETCAP_API_KEY");
 
 const getSpotifyRedirectUri = () => {
   return `https://us-central1-${process.env.GCLOUD_PROJECT || "inkbase01"}.cloudfunctions.net/api/spotify/callback`;
@@ -239,6 +240,185 @@ app.post("/spotify/request", async (req, res) => {
   }
 });
 
+// --- ROUTE: SPOTIFY EXTENDED ---
+app.post("/spotify/user_albums", async (req, res) => {
+  try {
+    const { uid, limit, offset, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const queryLimit = limit || 5;
+    const queryOffset = offset || 0;
+    
+    const data = await makeSpotifyRequest(uid, `me/albums?limit=${queryLimit}&offset=${queryOffset}`, "GET", null, device_id);
+    
+    const albums = data.items.map(item => ({
+      name: item.album.name,
+      artist: item.album.artists.map(a => a.name).join(", "),
+      image: item.album.images[0]?.url || null,
+      uri: item.album.uri
+    }));
+
+    res.json({ status: "success", data: albums });
+  } catch (error) {
+    console.error("Spotify Albums Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+app.post("/spotify/user_playlists", async (req, res) => {
+  try {
+    const { uid, limit, offset, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const queryLimit = limit || 5;
+    const queryOffset = offset || 0;
+
+    const data = await makeSpotifyRequest(uid, `me/playlists?limit=${queryLimit}&offset=${queryOffset}`, "GET", null, device_id);
+    
+    const playlists = data.items.map(item => ({
+      name: item.name,
+      owner: item.owner.display_name,
+      image: item.images[0]?.url || null,
+      uri: item.uri,
+      total_tracks: item.tracks.total
+    }));
+
+    res.json({ status: "success", data: playlists });
+  } catch (error) {
+    console.error("Spotify Playlists Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+app.post("/spotify/liked_songs", async (req, res) => {
+  try {
+    const { uid, limit, offset, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const queryLimit = limit || 5;
+    const queryOffset = offset || 0;
+
+    const data = await makeSpotifyRequest(uid, `me/tracks?limit=${queryLimit}&offset=${queryOffset}`, "GET", null, device_id);
+    
+    const tracks = data.items.map(item => ({
+      name: item.track.name,
+      artist: item.track.artists.map(a => a.name).join(", "),
+      album: item.track.album.name,
+      image: item.track.album.images[0]?.url || null,
+      uri: item.track.uri,
+      duration_ms: item.track.duration_ms
+    }));
+
+    res.json({ status: "success", data: tracks });
+  } catch (error) {
+    console.error("Spotify Liked Songs Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+app.post("/spotify/followed_artists", async (req, res) => {
+  try {
+    const { uid, limit, after, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const queryLimit = limit || 5;
+    const queryAfter = after ? `&after=${after}` : "";
+
+    const data = await makeSpotifyRequest(uid, `me/following?type=artist&limit=${queryLimit}${queryAfter}`, "GET", null, device_id);
+    
+    const artists = data.artists.items.map(item => ({
+      name: item.name,
+      image: item.images[0]?.url || null,
+      uri: item.uri,
+      genres: item.genres.slice(0, 2).join(", ")
+    }));
+
+    res.json({ status: "success", data: artists });
+  } catch (error) {
+    console.error("Spotify Artists Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+app.post("/spotify/playback", async (req, res) => {
+  try {
+    const { uid, action, uri, device_id, volume_percent, position_ms, state, target_device_id } = req.body;
+    if (!uid || !action) return res.status(400).json({ status: "error", message: "Missing UID or action" });
+
+    let endpoint = "";
+    let method = "PUT";
+    let body = null;
+
+    switch (action) {
+      case "play":
+        endpoint = "me/player/play";
+        if (uri) {
+            if (uri.includes("track")) body = { uris: [uri] };
+            else body = { context_uri: uri };
+        }
+        break;
+      case "pause":
+        endpoint = "me/player/pause";
+        break;
+      case "next":
+        endpoint = "me/player/next";
+        method = "POST";
+        break;
+      case "previous":
+        endpoint = "me/player/previous";
+        method = "POST";
+        break;
+      case "seek":
+        endpoint = `me/player/seek?position_ms=${position_ms || 0}`;
+        break;
+      case "volume":
+        endpoint = `me/player/volume?volume_percent=${volume_percent || 50}`;
+        break;
+      case "shuffle":
+        endpoint = `me/player/shuffle?state=${state === 'true' || state === true}`;
+        break;
+      case "repeat":
+        endpoint = `me/player/repeat?state=${state || 'off'}`;
+        break;
+      case "transfer":
+        endpoint = "me/player";
+        if (!target_device_id) return res.status(400).json({ status: "error", message: "Missing target_device_id" });
+        body = { device_ids: [target_device_id], play: true };
+        break;
+      default:
+        return res.status(400).json({ status: "error", message: "Invalid action" });
+    }
+
+    await makeSpotifyRequest(uid, endpoint, method, body, device_id);
+    res.json({ status: "success", message: `Action ${action} executed` });
+  } catch (error) {
+    console.error("Spotify Playback Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+app.post("/spotify/devices", async (req, res) => {
+  try {
+    const { uid, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const data = await makeSpotifyRequest(uid, "me/player/devices", "GET", null, device_id);
+    
+    const devices = data.devices.map(d => ({
+      id: d.id,
+      name: d.name,
+      type: d.type,
+      is_active: d.is_active,
+      volume: d.volume_percent
+    }));
+
+    res.json({ status: "success", data: devices });
+  } catch (error) {
+    console.error("Spotify Devices Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // --- ROUTE: CALENDAR ---
 app.post("/calendar", async (req, res) => {
   try {
@@ -403,6 +583,168 @@ app.post("/weather", async (req, res) => {
   }
 });
 
+// --- ROUTE: WEATHER REALTIME ---
+app.post("/weather/realtime", async (req, res) => {
+  try {
+    const { uid, location, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { weather_city, weather_api_key } = docSnap.data();
+    const queryCity = location || weather_city;
+    if (!queryCity) return res.status(400).json({ status: "error", message: "Location not set" });
+
+    const apiKey = weather_api_key || WEATHERAPI_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const response = await fetch(`https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(queryCity)}&aqi=no`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`WeatherAPI Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    res.json({ status: "success", data: { temp: Math.round(data.current.temp_f), condition: data.current.condition.text, description: data.current.condition.text, city: data.location.name } });
+  } catch (error) {
+    console.error("Weather Realtime Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: WEATHER FORECAST ---
+app.post("/weather/forecast", async (req, res) => {
+  try {
+    const { uid, location, days, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { forecast_city, weather_api_key } = docSnap.data();
+    const queryCity = location || forecast_city;
+    if (!queryCity) return res.status(400).json({ status: "error", message: "Location not set" });
+
+    const apiKey = weather_api_key || WEATHERAPI_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const queryDays = days || 3;
+    const response = await fetch(`https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${encodeURIComponent(queryCity)}&days=${queryDays}&aqi=no&alerts=no`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`WeatherAPI Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const forecast = data.forecast.forecastday.map(d => ({
+      date: d.date,
+      max_temp: d.day.maxtemp_f,
+      min_temp: d.day.mintemp_f,
+      condition: d.day.condition.text
+    }));
+    res.json({ status: "success", data: { city: data.location.name, forecast } });
+  } catch (error) {
+    console.error("Weather Forecast Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: WEATHER HISTORY ---
+app.post("/weather/history", async (req, res) => {
+  try {
+    const { uid, location, date, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { history_city, history_date, weather_api_key } = docSnap.data();
+    const queryCity = location || history_city;
+    
+    // Default to today if no date provided
+    const targetDateStr = date || history_date || new Date().toISOString().split('T')[0];
+    
+    // Calculate range (7 days ending on target date)
+    const endDate = new Date(targetDateStr);
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 6); 
+    
+    const dtStr = startDate.toISOString().split('T')[0];
+    const endDtStr = endDate.toISOString().split('T')[0];
+
+    if (!queryCity) return res.status(400).json({ status: "error", message: "Location not set" });
+
+    const apiKey = weather_api_key || WEATHERAPI_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const response = await fetch(`https://api.weatherapi.com/v1/history.json?key=${apiKey}&q=${encodeURIComponent(queryCity)}&dt=${dtStr}&end_dt=${endDtStr}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`WeatherAPI Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const history = data.forecast.forecastday.map(d => ({
+      date: d.date,
+      avg_temp: d.day.avgtemp_f,
+      condition: d.day.condition.text
+    }));
+    res.json({ status: "success", data: { city: data.location.name, history } });
+  } catch (error) {
+    console.error("Weather History Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: ASTRONOMY ---
+app.post("/astronomy", async (req, res) => {
+  try {
+    const { uid, location, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { astronomy_city, astronomy_api_key } = docSnap.data();
+    const queryCity = location || astronomy_city;
+    if (!queryCity) return res.status(400).json({ status: "error", message: "Astronomy location not set" });
+
+    const apiKey = astronomy_api_key || WEATHERAPI_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const response = await fetch(`https://api.weatherapi.com/v1/astronomy.json?key=${apiKey}&q=${encodeURIComponent(queryCity)}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`WeatherAPI Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const astro = data.astronomy.astro;
+    res.json({
+      status: "success",
+      data: {
+        location: data.location.name,
+        sunrise: astro.sunrise,
+        sunset: astro.sunset,
+        moonrise: astro.moonrise,
+        moonset: astro.moonset,
+        moon_phase: astro.moon_phase,
+        moon_illumination: astro.moon_illumination,
+        is_sun_up: astro.is_sun_up
+      }
+    });
+  } catch (error) {
+    console.error("Astronomy Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // --- ROUTE: STOCK ---
 app.post("/stock", async (req, res) => {
   try {
@@ -516,6 +858,132 @@ app.post("/news", async (req, res) => {
     res.json({ status: "success", data: articles });
   } catch (error) {
     console.error("News Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: CRYPTO ---
+app.post("/crypto", async (req, res) => {
+  try {
+    const { uid, symbol, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { crypto_symbol, crypto_api_key } = docSnap.data();
+    const querySymbol = symbol || crypto_symbol;
+    if (!querySymbol) return res.status(400).json({ status: "error", message: "Crypto symbol not set" });
+
+    const apiKey = crypto_api_key || COINMARKETCAP_API_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const response = await fetch(`https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=${querySymbol.toUpperCase()}`, {
+      headers: { 'X-CMC_PRO_API_KEY': apiKey }
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`CoinMarketCap Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const coinData = data.data[querySymbol.toUpperCase()];
+    
+    if (!coinData) throw new Error("Symbol not found");
+
+    const quote = coinData.quote.USD;
+    res.json({ status: "success", data: { symbol: coinData.symbol, name: coinData.name, price: quote.price, percent_change_24h: quote.percent_change_24h } });
+  } catch (error) {
+    console.error("Crypto Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: STOCK ARRAY ---
+app.post("/stock/array", async (req, res) => {
+  try {
+    const { uid, symbol, days, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { stock_symbol, stock_api_key } = docSnap.data();
+    const querySymbol = symbol || stock_symbol;
+    if (!querySymbol) return res.status(400).json({ status: "error", message: "Stock symbol not set" });
+
+    const apiKey = stock_api_key || FINNHUB_API_KEY.value();
+    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
+
+    const numDays = days || 7;
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - (numDays * 24 * 60 * 60);
+
+    const response = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(querySymbol)}&resolution=D&from=${from}&to=${to}&token=${apiKey}`);
+    
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Finnhub Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.s === "no_data") {
+        return res.json({ status: "success", data: [] });
+    }
+
+    const chartData = data.t.map((timestamp, index) => ({
+      date: new Date(timestamp * 1000).toISOString().split('T')[0],
+      price: data.c[index]
+    }));
+
+    res.json({ status: "success", data: chartData });
+  } catch (error) {
+    console.error("Stock Array Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: CRYPTO ARRAY ---
+app.post("/crypto/array", async (req, res) => {
+  try {
+    const { uid, symbol, days, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    const { crypto_symbol } = docSnap.data();
+    const querySymbol = symbol || crypto_symbol;
+    if (!querySymbol) return res.status(400).json({ status: "error", message: "Crypto symbol not set" });
+
+    // Using CryptoCompare for historical data as it supports symbols directly and has a free tier
+    const numDays = days || 7;
+    const response = await fetch(`https://min-api.cryptocompare.com/data/v2/histoday?fsym=${querySymbol.toUpperCase()}&tsym=USD&limit=${numDays}`);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`CryptoCompare Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.Response === "Error") {
+        throw new Error(data.Message);
+    }
+
+    const chartData = data.Data.Data.map(item => ({
+      date: new Date(item.time * 1000).toISOString().split('T')[0],
+      price: item.close
+    }));
+
+    res.json({ status: "success", data: chartData });
+  } catch (error) {
+    console.error("Crypto Array Error:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
