@@ -583,37 +583,6 @@ app.post("/weather", async (req, res) => {
   }
 });
 
-// --- ROUTE: WEATHER REALTIME ---
-app.post("/weather/realtime", async (req, res) => {
-  try {
-    const { uid, location, device_id } = req.body;
-    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
-
-    const settingsRef = getSettingsRef(uid, device_id);
-    const docSnap = await settingsRef.get();
-    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
-
-    const { weather_city, weather_api_key } = docSnap.data();
-    const queryCity = location || weather_city;
-    if (!queryCity) return res.status(400).json({ status: "error", message: "Location not set" });
-
-    const apiKey = weather_api_key || WEATHERAPI_KEY.value();
-    if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
-
-    const response = await fetch(`https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(queryCity)}&aqi=no`);
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`WeatherAPI Error ${response.status}: ${errText}`);
-    }
-
-    const data = await response.json();
-    res.json({ status: "success", data: { temp: Math.round(data.current.temp_f), condition: data.current.condition.text, description: data.current.condition.text, city: data.location.name } });
-  } catch (error) {
-    console.error("Weather Realtime Error:", error);
-    res.status(500).json({ status: "error", message: error.message });
-  }
-});
-
 // --- ROUTE: WEATHER FORECAST ---
 app.post("/weather/forecast", async (req, res) => {
   try {
