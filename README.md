@@ -79,6 +79,32 @@ Data is stored in Firestore with the following structure:
 
 ## Key Mechanisms
 
+### Device Setup Flow
+
+The application implements a full device API certification protocol to allow for safe and secure data access from real-time sources.
+
+1. **Call /setup**: Users web enabled device makes a /setup request to the API url with an imbedded device ID (MAC Address).
+2. **Function Checks**: The /setup function triggers a database check parsing for devices with a device ID sent in the initial /setup request.
+3. **Return**: The /setup function returns a json following a success or failure.
+   
+*Example Success Return*: 
+```
+{
+  status: "success",
+  uid: 001A2B3C4D5E,
+  api_key: sk_.........,
+  friendly_user_id: "My Username",
+  message: "Setup successful"
+}
+```
+
+*Example Failure Return*:
+```
+{
+  status: "error",
+  message: "Internal Server Error"
+}
+```
 ### Spotify OAuth Flow
 
 The application implements a full server-side OAuth flow:
@@ -87,6 +113,269 @@ The application implements a full server-side OAuth flow:
 2. **Redirect**: Backend constructs the authorization URL with state (User UID) and redirects to Spotify.
 3. **Callback**: Spotify calls the backend with a code.
 4. **Storage**: Backend exchanges code for Access/Refresh tokens and stores them securely in Firestore.
+5. **User Calls any `/spotify` Request**: Triggers `makeSpotifyRequest(uid, endpoint, method = "GET", body = null, deviceId = null)` which checks users tokens and refreshed if needed by calling `refreshSpotifyToken(uid, refreshToken, deviceId)`. `makeSpotifyRequest()` returns the response json from the Spotify Web API along with its status. Other `/spotify` calls like `/spotify/user_albums` return a parsed json with more specific information in turn making the returned json smaller and faster to fetch by a device.
+
+*Example `/spotify/user_albums` Success Return*:
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "name": "Random Access Memories",
+      "artist": "Daft Punk",
+      "image": "https://i.scdn.co/image/ab67616d0000b2734268e5971488c2278923e595",
+      "uri": "spotify:album:4m2880jivSbbyEGqfTD7P6"
+    },
+    {
+      "name": "IGOR",
+      "artist": "Tyler, The Creator",
+      "image": "https://i.scdn.co/image/ab67616d0000b273704f23d8839443c683c39178",
+      "uri": "spotify:album:5zi7WsKlIiUXv09tbGLKsE"
+    }
+  ]
+}
+```
+*Example `/spotify/user_albums` Failure Returns*:
+```
+{
+  "status": "error",
+  "message": "Request failed with status code 401: Invalid access token"
+}
+
+{
+  "status": "error",
+  "message": "Missing UID"
+}
+```
+
+### Calendar Flow ###
+
+This application parses an ICS and returns a smaller easily read json file for events in the next time frame(specified by user). 
+1. **Trigger**: User calls `/calendar` with optional parameters of `url` (the ics url), and `range` (1d, 3d, 1w, 1m). If not specified the function defaults to the parameters defined in the integrations page.
+2. **Return**: Returns a json with the users next calendar events and a success or failure message.
+
+*Example Success Return*:
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "summary": "Aerospace Meeting",
+      "start": "2026-01-26T16:00:00.000Z",
+      "end": "2026-01-26T17:15:00.000Z",
+      "location": "Airplane Corp."
+    },
+    {
+      "summary": "InkBridge Sync",
+      "start": "2026-01-27T10:00:00.000Z",
+      "end": "2026-01-27T11:00:00.000Z",
+      "location": null
+    },
+    {
+      "summary": "Food Pantry Volunteering",
+      "start": "2026-01-28T09:00:00.000Z",
+      "end": "2026-01-28T13:00:00.000Z",
+      "location": "null"
+    }
+  ]
+}
+```
+*Example Failure Returns*: 
+```
+{
+  "status": "error",
+  "message": "Error: Invalid URI \"htps://bad-url.com/calendar.ics\""
+}
+
+{
+  "status": "error",
+  "message": "User settings not found"
+}
+
+{
+  "status": "error",
+  "message": "Calendar not connected"
+}
+```
+
+### Canvas LMS FLow ###
+1. **Trigger**: User request `/canvas` with optional parameters `type` ("grades" or "assignments"), `domain` (Users canvas domain url), `token` (Users canvas API token).
+2. **Return**: Returns a json containing data and a success or failure message.
+
+*Example Assignments Success Return*:
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "id": 104857,
+      "title": "Calculus III - Weekly Problem Set 4",
+      "due_at": "2026-01-26T23:59:00Z",
+      "type": "assignment"
+    },
+    {
+      "id": 104922,
+      "title": "Ethics in Spaceflight - Draft Submission",
+      "due_at": "2026-01-27T14:00:00Z",
+      "type": "assignment"
+    },
+    {
+      "id": 105101,
+      "title": "Lab Safety Quiz",
+      "due_at": "2026-01-28T11:59:00Z",
+      "type": "quiz"
+    }
+  ]
+}
+```
+*Example Grades Success Return*:
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "course": "Materials Science",
+      "grade": 92.5,
+      "letter": "A-"
+    },
+    {
+      "course": "Calculus 3",
+      "grade": 88.0,
+      "letter": "B+"
+    },
+    {
+      "course": "Engineering Ethics",
+      "grade": "N/A",
+      "letter": "N/A"
+    }
+  ]
+}
+```
+*Example Failure Returns*:
+```
+{
+  "status": "error",
+  "message": "Canvas not connected"
+}
+
+{
+  "status": "error",
+  "message": "Canvas API Error 401: {\"status\":\"unauthenticated\",\"errors\":[{\"message\":\"Invalid access token.\"}]}"
+}
+```
+
+### Weather Flow ###
+Uses `weatherapi.com` for realtime data and forcast fetching along with astronomy data.
+1. **Trigger**: User request `/weather` or `/astronomy` with the optional parameter of `location`. 
+2. **Return**: Returns a json containing data and a success or failure message.
+
+*Example `/weather` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "temp": 28,
+    "condition": "Light snow",
+    "description": "Light snow",
+    "city": "Boulder"
+  }
+}
+```
+
+*Example `/weather` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "Weather location not set"
+}
+```
+
+*Example `/weather/forcast` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "city": "Boulder",
+    "forecast": [
+      {
+        "date": "2026-01-23",
+        "max_temp": 34.2,
+        "min_temp": 18.5,
+        "condition": "Patchy light snow"
+      },
+      {
+        "date": "2026-01-24",
+        "max_temp": 41.0,
+        "min_temp": 22.1,
+        "condition": "Partly cloudy"
+      },
+      {
+        "date": "2026-01-25",
+        "max_temp": 45.3,
+        "min_temp": 28.4,
+        "condition": "Sunny"
+      }
+    ]
+  }
+}
+```
+*Example `/weather/forcast` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "WeatherAPI Error 403: {\"error\":{\"code\":2008,\"message\":\"API key has been disabled.\"}}"
+}
+```
+*Example `/weather/history` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "city": "Boulder",
+    "history": [
+      { "date": "2026-01-17", "avg_temp": 38.5, "condition": "Overcast" },
+      { "date": "2026-01-18", "avg_temp": 42.1, "condition": "Sunny" },
+      { "date": "2026-01-19", "avg_temp": 40.0, "condition": "Partly cloudy" },
+      { "date": "2026-01-20", "avg_temp": 35.6, "condition": "Light snow" },
+      { "date": "2026-01-21", "avg_temp": 29.8, "condition": "Heavy snow" },
+      { "date": "2026-01-22", "avg_temp": 25.4, "condition": "Mist" },
+      { "date": "2026-01-23", "avg_temp": 28.2, "condition": "Light snow" }
+    ]
+  }
+}
+```
+*Example `/weather/history` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "Missing UID"
+}
+```
+*Example `/astronomy` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "location": "Boulder",
+    "sunrise": "07:18 AM",
+    "sunset": "05:12 PM",
+    "moonrise": "09:45 AM",
+    "moonset": "08:30 PM",
+    "moon_phase": "Waxing Crescent",
+    "moon_illumination": "23",
+    "is_sun_up": 1
+  }
+}
+```
+
+*Example `/astronomy` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "User settings not found"
+}
+```
+
 
 ## TO-DO
 ### Backend Development (Node JS)
