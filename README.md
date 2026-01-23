@@ -375,7 +375,208 @@ Uses `weatherapi.com` for realtime data and forcast fetching along with astronom
   "message": "User settings not found"
 }
 ```
+### Stock Flow ###
+Driven by Finnhub API to pull realtime stock information.
+1. **Trigger**: User calls `/stock` with optional parameter of `symbol`.
+2. **Return**: Returns a json with data and a success or failure message.
 
+*Example `/stock` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "symbol": "NVDA",
+    "price": 142.50,
+    "percent": 2.45,
+    "high": 144.10,
+    "low": 139.80
+  }
+}
+```
+*Example `/stock` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "Finnhub Error 429: {\"error\":\"API limit reached. Please try again later. Thanks for using Finnhub.\"}"
+}
+```
+
+*Example `/stock/array` Success Return*:
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "date": "2026-01-16",
+      "price": 224.50
+    },
+    {
+      "date": "2026-01-17",
+      "price": 226.10
+    },
+    {
+      "date": "2026-01-18",
+      "price": 225.80
+    },
+    {
+      "date": "2026-01-19",
+      "price": 228.45
+    },
+    {
+      "date": "2026-01-20",
+      "price": 230.15
+    },
+    {
+      "date": "2026-01-21",
+      "price": 229.90
+    },
+    {
+      "date": "2026-01-22",
+      "price": 231.20
+    }
+  ]
+}
+```
+User requests 7 days of history for "AAPL" (Apple). Logic: The code maps the Finnhub t (timestamp) and c (closing price) arrays into a clean object structure. The dates correspond to the daily close.
+
+### Crypto Flow ###
+Driven by CoinMarketCap API to pull realtime crypto information.
+1. **Trigger**: User calls `/crypto` with optional parameter of `symbol`.
+2. **Return**: Returns a json with data and a success or failure message.
+
+*Example `/crypto` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "symbol": "BTC",
+    "name": "Bitcoin",
+    "price": 104250.75,
+    "percent_change_24h": 3.45
+  }
+}
+```
+*Example `/crypto` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "CoinMarketCap Error 401: {\"status\":{\"error_code\":1002,\"error_message\":\"API key missing.\",\"credit_count\":0}}"
+}
+```
+*Example `/crypto/array` Success Return*:
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "date": "2026-01-16",
+      "price": 3850.20
+    },
+    {
+      "date": "2026-01-17",
+      "price": 3910.55
+    },
+    {
+      "date": "2026-01-18",
+      "price": 3895.10
+    },
+    {
+      "date": "2026-01-19",
+      "price": 4020.80
+    },
+    {
+      "date": "2026-01-20",
+      "price": 4150.00
+    },
+    {
+      "date": "2026-01-21",
+      "price": 4100.25
+    },
+    {
+      "date": "2026-01-22",
+      "price": 4080.50
+    },
+    {
+      "date": "2026-01-23",
+      "price": 4125.75
+    }
+  ]
+}
+```
+*Example `/crypto/array` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "There is no data for the symbol INVALIDCOIN ."
+}
+```
+### Travel Time Flow ###
+Driven by Google Maps Distance Matrix API to pull realtime travel and traffic information.
+1. **Trigger**: User calls `/travel` with optional parameters of  `origin`, `destination`, `mode`.
+2. **Return**: Returns a json with data and a success or failure message.
+
+*Example `/travel` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "duration": "42 mins",
+    "distance": "44.5 mi",
+    "origin": "Boulder, CO, USA",
+    "destination": "Denver International Airport, 8500 Peña Blvd, Denver, CO 80249, USA",
+    "mode": "driving"
+  }
+}
+```
+
+*Example `/travel` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "Route not found: ZERO_RESULTS"
+}
+```
+
+### News Headlines Flow ###
+Driven by NewsAPI to pull current headlines from different categories of interest.
+1. **Trigger**: User calls `/news` with optional parameter `category`.
+2. **Return**: Returns a json with data and a success or failure message.
+
+*Example `/news` Success Return*:
+```
+{
+  "status": "success",
+  "data": [
+    {
+      "title": "NVIDIA announces new RTX 50-series GPUs with AI capabilities",
+      "source": "The Verge"
+    },
+    {
+      "title": "SpaceX Starship successfully completes orbital refueling test",
+      "source": "TechCrunch"
+    },
+    {
+      "title": "Apple releases iOS 19.3 with major security patches",
+      "source": "MacRumors"
+    },
+    {
+      "title": "Microsoft and OpenAI unveil GPT-6 preview for enterprise",
+      "source": "CNBC"
+    },
+    {
+      "title": "New solid-state battery breakthrough promises 1000-mile EV range",
+      "source": "Ars Technica"
+    }
+  ]
+}
+```
+*Example `/news` Failure Return*:
+```
+{
+  "status": "error",
+  "message": "NewsAPI Error 429: {\"status\":\"error\",\"code\":\"rateLimited\",\"message\":\"You have made too many requests recently. Developer accounts are limited to 100 requests over a 24 hour period (50 requests available every 12 hours).\"}"
+}
+```
 
 ## TO-DO
 ### Backend Development (Node JS)
