@@ -406,10 +406,13 @@ export default function InkBridge() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.lastHandshake) {
-          setDeviceStatus('online');
           // Convert Firestore timestamp to millis if needed
           const millis = data.lastHandshake.toMillis ? data.lastHandshake.toMillis() : Date.now();
           setLastSync(millis);
+
+          // Check if online (within 5 minutes)
+          const isOnline = (Date.now() - millis) < 300000;
+          setDeviceStatus(isOnline ? 'online' : 'linked');
         } else {
           setDeviceStatus('linked');
         }
@@ -418,6 +421,16 @@ export default function InkBridge() {
 
     return () => unsubscribe();
   }, [activeDeviceId, user]);
+
+  // Check heartbeat validity periodically
+  useEffect(() => {
+    if (!lastSync) return;
+    const interval = setInterval(() => {
+      const isOnline = (Date.now() - lastSync) < 300000;
+      setDeviceStatus(isOnline ? 'online' : 'linked');
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [lastSync]);
 
   useEffect(() => {
     const handleScroll = () => {
