@@ -26,7 +26,7 @@ const getSettingsRef = (uid, deviceId) => {
 
 // --- MIDDLEWARE: DEVICE HEARTBEAT ---
 const updateHeartbeat = async (req, res, next) => {
-  const deviceId = req.body.device_id || req.query.device_id || req.headers['x-device-id'];
+  const deviceId = req.query.device_id || req.headers['x-device-id'];
   if (deviceId) {
     const cleanId = deviceId.trim().toUpperCase().replace(/:/g, '');
     // Fire and forget update to minimize latency
