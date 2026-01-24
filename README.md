@@ -1,8 +1,8 @@
-# [InkBridge](https://inkbase01.web.app)
+# [InkBridge](https://inkbase01.web.app),  [InkBridge ESP32 Library](https://github.com/Cgriz365/InkBridge-ESP32)
 <p align="center">
   <img src="Resources/InkBridgeDashboard.png" width="865">
-  <img src="Resources/InkBridgeIntegrations.png" height="250">
-  <img src="Resources/InkBridgeSetup.png" height="250"
+  <img src="Resources/InkBridgeIntegrations.png" width="400">
+  <img src="Resources/InkBridgeSetup.png" width="400"
 </p>
   
 ___
