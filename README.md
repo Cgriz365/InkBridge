@@ -41,8 +41,11 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 | `/spotify/followed_artists` | POST | Fetches user's followed artists. Optional params: `limit`, `after`. |
 | `/spotify/playback` | POST | Controls playback state. Required param: `action` (play, pause, next, previous, seek, volume, shuffle, repeat, transfer). |
 | `/spotify/devices` | POST | Fetches available Spotify Connect devices. |
-| `/calendar` | POST | Fetches and parses the user's iCal feed. Optional params: `range`, `url`. |
+| `/calendar` | POST | Fetches and parses the user's iCal feed. Optional params: `range`, `url`, `simple`. |
 | `/canvas` | POST | Proxies requests to the Canvas LMS API. Optional params: `type`, `domain`, `token`. |
+| `/canvas/courses` | POST | Fetches list of active courses with progress. |
+| `/canvas/course` | POST | Fetches specific course details (todos, feedback). Params: `course_id` or `course_name`. |
+| `/canvas/assignment` | POST | Fetches specific assignment details. Params: `course_id`, `assignment_id` or `assignment_name`. |
 | `/weather` | POST | Fetches current weather conditions. Optional params: `location`. |
 | `/weather/forecast` | POST | Fetches weather forecast. Optional params: `location`, `days`. |
 | `/weather/history` | POST | Fetches historical weather data. Optional params: `location`, `date`. |
@@ -151,33 +154,52 @@ The application implements a full server-side OAuth flow:
 ### Calendar Flow ###
 
 This application parses an ICS and returns a smaller easily read json file for events in the next time frame(specified by user). 
-1. **Trigger**: User calls `/calendar` with optional parameters of `url` (the ics url), and `range` (1d, 3d, 1w, 1m). If not specified the function defaults to the parameters defined in the integrations page.
+1. **Trigger**: User calls `/calendar` with optional parameters of `url` (the ics url), `range` (1d, 3d, 1w, 1m), and `simple` (boolean). If not specified the function defaults to the parameters defined in the integrations page.
 2. **Return**: Returns a json with the users next calendar events and a success or failure message.
 
 *Example Success Return*:
 ```
 {
   "status": "success",
-  "data": [
-    {
-      "summary": "Aerospace Meeting",
-      "start": "2026-01-26T16:00:00.000Z",
-      "end": "2026-01-26T17:15:00.000Z",
-      "location": "Airplane Corp."
+  "data": {
+    "calendar": {
+      "name": "Work Calendar",
+      "timezone": "America/New_York",
+      "description": null
     },
-    {
-      "summary": "InkBridge Sync",
-      "start": "2026-01-27T10:00:00.000Z",
-      "end": "2026-01-27T11:00:00.000Z",
-      "location": null
-    },
-    {
-      "summary": "Food Pantry Volunteering",
-      "start": "2026-01-28T09:00:00.000Z",
-      "end": "2026-01-28T13:00:00.000Z",
-      "location": "null"
-    }
-  ]
+    "events": [
+      {
+        "name": "Aerospace Meeting",
+        "start": "2026-01-26T16:00:00.000Z",
+        "end": "2026-01-26T17:15:00.000Z",
+        "duration": 4500000,
+        "location": "Airplane Corp.",
+        "description": "Discussing the new wing design.",
+        "transparency": "Timed Event",
+        "structured_location": null,
+        "alarm": "-PT15M",
+        "organizer": "Boss Man"
+      }
+    ]
+  }
+}
+```
+
+*Example Simple Success Return (`simple=true`)*:
+```
+{
+  "status": "success",
+  "data": {
+    "calendar": { ... },
+    "events": [
+      {
+        "name": "InkBridge Sync",
+        "start": "2026-01-27T10:00:00.000Z",
+        "end": "2026-01-27T11:00:00.000Z",
+        "location": null
+      }
+    ]
+  }
 }
 ```
 *Example Failure Returns*: 
@@ -199,58 +221,75 @@ This application parses an ICS and returns a smaller easily read json file for e
 ```
 
 ### Canvas LMS FLow ###
-1. **Trigger**: User request `/canvas` with optional parameters `type` ("grades" or "assignments"), `domain` (Users canvas domain url), `token` (Users canvas API token).
-2. **Return**: Returns a json containing data and a success or failure message.
+The Canvas integration supports multiple endpoints to fetch specific data types.
 
-*Example Assignments Success Return*:
+**Endpoints:**
+1. **`/canvas`**: Legacy endpoint. Fetches assignments or grades based on `type`.
+2. **`/canvas/courses`**: Fetches a list of active courses.
+3. **`/canvas/course`**: Fetches details for a specific course (todos, feedback). Requires `course_id` or `course_name`.
+4. **`/canvas/assignment`**: Fetches details for a specific assignment. Requires `course_id` and (`assignment_id` or `assignment_name`).
+
+*Example `/canvas/courses` Success Return*:
 ```
 {
   "status": "success",
   "data": [
     {
-      "id": 104857,
-      "title": "Calculus III - Weekly Problem Set 4",
-      "due_at": "2026-01-26T23:59:00Z",
-      "type": "assignment"
-    },
-    {
-      "id": 104922,
-      "title": "Ethics in Spaceflight - Draft Submission",
-      "due_at": "2026-01-27T14:00:00Z",
-      "type": "assignment"
-    },
-    {
-      "id": 105101,
-      "title": "Lab Safety Quiz",
-      "due_at": "2026-01-28T11:59:00Z",
-      "type": "quiz"
+      "name": "Introduction to Aerospace Engineering",
+      "id": 101,
+      "state": "available",
+      "progress": 94.5,
+      "calendar_link": "https://canvas.instructure.com/feeds/calendars/course_101.ics"
     }
   ]
 }
 ```
-*Example Grades Success Return*:
+
+*Example `/canvas/course` Success Return*:
 ```
 {
   "status": "success",
-  "data": [
-    {
-      "course": "Materials Science",
-      "grade": 92.5,
-      "letter": "A-"
-    },
-    {
-      "course": "Calculus 3",
-      "grade": 88.0,
-      "letter": "B+"
-    },
-    {
-      "course": "Engineering Ethics",
-      "grade": "N/A",
-      "letter": "N/A"
-    }
-  ]
+  "data": {
+    "todos": [
+      {
+        "name": "Weekly Problem Set 5",
+        "id": 505,
+        "due_date": "2026-02-01T23:59:00Z",
+        "description": "Complete problems 1-10 in Chapter 5.",
+        "type": ["online_upload"]
+      }
+    ],
+    "feedback": [
+      {
+        "assignment_name": "Midterm Exam",
+        "score": 92,
+        "grade": "A-",
+        "graded_at": "2026-01-20T14:30:00Z",
+        "feedback": "Great work on the derivation."
+      }
+    ]
+  }
 }
 ```
+
+*Example `/canvas/assignment` Success Return*:
+```
+{
+  "status": "success",
+  "data": {
+    "course_name": "Calculus III",
+    "course_id": 102,
+    "assignment_name": "Weekly Problem Set 5",
+    "id": 505,
+    "marked_complete": false,
+    "dismissed": false,
+    "submission_status": "unsubmitted",
+    "grade": null,
+    "html_url": "https://canvas.instructure.com/courses/102/assignments/505"
+  }
+}
+```
+
 *Example Failure Returns*:
 ```
 {
@@ -582,4 +621,3 @@ Driven by NewsAPI to pull current headlines from different categories of interes
 ### Backend Development (Node JS)
 
 ### Frontend Development (Typescript)
-
