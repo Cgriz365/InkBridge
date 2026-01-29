@@ -422,7 +422,7 @@ app.post("/spotify/devices", async (req, res) => {
 // --- ROUTE: CALENDAR ---
 app.post("/calendar", async (req, res) => {
   try {
-    const { uid, range, url, device_id } = req.body;
+    const { uid, range, url, device_id, simple } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const settingsRef = getSettingsRef(uid, device_id);
@@ -445,6 +445,13 @@ app.post("/calendar", async (req, res) => {
     else if (useRange === "3d") endLimit.setDate(now.getDate() + 3);
     else endLimit.setDate(now.getDate() + 1); // Default 1d
 
+    const vcal = events['vcalendar'];
+    const calendarDetails = {
+      name: vcal?.['WR-CALNAME'] || vcal?.['X-WR-CALNAME'] || null,
+      timezone: vcal?.['WR-TIMEZONE'] || vcal?.['X-WR-TIMEZONE'] || null,
+      description: vcal?.['WR-CALDESC'] || vcal?.['X-WR-CALDESC'] || null
+    };
+
     const results = [];
     for (const event of Object.values(events)) {
       if (event.type !== "VEVENT" || !event.start) continue;
@@ -452,6 +459,41 @@ app.post("/calendar", async (req, res) => {
       const startDate = new Date(event.start);
       const endDate = event.end ? new Date(event.end) : new Date(startDate.getTime() + 3600000);
       const duration = endDate.getTime() - startDate.getTime();
+
+      const buildEvent = (evt, start, end) => {
+        if (simple) {
+          return {
+            name: evt.summary,
+            start: start.toISOString(),
+            end: end.toISOString(),
+            location: evt.location || null
+          };
+        }
+        const isFullDay = evt.datetype === 'date';
+        let alarm = null;
+        if (evt.alarms) {
+          const alarmKeys = Object.keys(evt.alarms);
+          if (alarmKeys.length > 0) alarm = evt.alarms[alarmKeys[0]].trigger;
+        }
+        let organizer = null;
+        if (evt.organizer) {
+           if (typeof evt.organizer === 'string') organizer = evt.organizer;
+           else if (evt.organizer.params && evt.organizer.params.CN) organizer = evt.organizer.params.CN;
+           else if (evt.organizer.val) organizer = evt.organizer.val;
+        }
+        return {
+          name: evt.summary,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          duration: duration,
+          location: evt.location || null,
+          description: evt.description || null,
+          transparency: isFullDay ? "Full Day" : "Timed Event",
+          structured_location: evt['X-APPLE-STRUCTURED-LOCATION'] || null,
+          alarm: alarm,
+          organizer: organizer
+        };
+      };
 
       if (event.rrule) {
         const searchStart = new Date(now.getTime() - duration);
@@ -461,25 +503,18 @@ app.post("/calendar", async (req, res) => {
             const instanceStart = new Date(date);
             const instanceEnd = new Date(instanceStart.getTime() + duration);
             if (instanceEnd >= now && instanceStart <= endLimit) {
-              results.push({ summary: event.summary, start: instanceStart, end: instanceEnd, location: event.location });
+              results.push(buildEvent(event, instanceStart, instanceEnd));
             }
           });
         } catch (e) { console.error(`RRule Error for ${event.summary}:`, e); }
       } else if (endDate >= now && startDate <= endLimit) {
-        results.push({ summary: event.summary, start: startDate, end: endDate, location: event.location });
+        results.push(buildEvent(event, startDate, endDate));
       }
     }
 
-    const upcoming = results
-      .map(e => ({
-        summary: e.summary,
-        start: e.start.toISOString(),
-        end: e.end.toISOString(),
-        location: e.location || null
-      }))
-      .sort((a, b) => new Date(a.start) - new Date(b.start));
+    const upcoming = results.sort((a, b) => new Date(a.start) - new Date(b.start));
 
-    res.json({ status: "success", data: upcoming });
+    res.json({ status: "success", data: { calendar: calendarDetails, events: upcoming } });
   } catch (error) {
     console.error("Calendar Error:", error);
     res.status(500).json({ status: "error", message: error.message });
@@ -547,6 +582,174 @@ app.post("/canvas", async (req, res) => {
     res.json({ status: "success", data: assignments });
   } catch (error) {
     console.error("Canvas Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: CANVAS COURSES ---
+app.post("/canvas/courses", async (req, res) => {
+  try {
+    const { uid, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    let { canvas_token, canvas_domain } = docSnap.data();
+    if (!canvas_token || !canvas_domain) return res.status(400).json({ status: "error", message: "Canvas not connected" });
+
+    canvas_domain = canvas_domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    const response = await fetch(`https://${canvas_domain}/api/v1/courses?enrollment_state=active&include[]=total_scores&include[]=term&include[]=course_progress&include[]=public_description`, {
+      headers: { "Authorization": `Bearer ${canvas_token}` }
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Canvas API Error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const courses = data.map(course => ({
+      name: course.name,
+      id: course.id,
+      state: course.workflow_state,
+      progress: course.enrollments?.[0]?.computed_current_score || 0,
+      calendar_link: course.calendar?.ics || `https://${canvas_domain}/feeds/calendars/course_${course.id}.ics`
+    }));
+
+    res.json({ status: "success", data: courses });
+  } catch (error) {
+    console.error("Canvas Courses Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: CANVAS COURSE DETAILS ---
+app.post("/canvas/course", async (req, res) => {
+  try {
+    const { uid, course_id, course_name, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+    if (!course_id && !course_name) return res.status(400).json({ status: "error", message: "Missing Course ID or Name" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    let { canvas_token, canvas_domain } = docSnap.data();
+    if (!canvas_token || !canvas_domain) return res.status(400).json({ status: "error", message: "Canvas not connected" });
+
+    canvas_domain = canvas_domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    let targetId = course_id;
+
+    if (!targetId && course_name) {
+      const coursesRes = await fetch(`https://${canvas_domain}/api/v1/courses?enrollment_state=active`, {
+        headers: { "Authorization": `Bearer ${canvas_token}` }
+      });
+      const courses = await coursesRes.json();
+      const match = courses.find(c => c.name.toLowerCase().includes(course_name.toLowerCase()));
+      if (!match) return res.status(404).json({ status: "error", message: "Course not found" });
+      targetId = match.id;
+    }
+
+    const assignmentsRes = await fetch(`https://${canvas_domain}/api/v1/courses/${targetId}/assignments?bucket=upcoming&order_by=due_at`, {
+      headers: { "Authorization": `Bearer ${canvas_token}` }
+    });
+    const assignmentsData = await assignmentsRes.json();
+    
+    const todos = assignmentsData.map(a => ({
+      name: a.name,
+      id: a.id,
+      due_date: a.due_at,
+      description: a.description,
+      type: a.submission_types
+    }));
+
+    const submissionsRes = await fetch(`https://${canvas_domain}/api/v1/courses/${targetId}/students/submissions?include[]=assignment&include[]=submission_comments&order=graded_at&descending`, {
+      headers: { "Authorization": `Bearer ${canvas_token}` }
+    });
+    const submissionsData = await submissionsRes.json();
+
+    const feedback = submissionsData
+      .filter(s => s.graded_at)
+      .slice(0, 5)
+      .map(s => ({
+        assignment_name: s.assignment?.name,
+        score: s.score,
+        grade: s.grade,
+        graded_at: s.graded_at,
+        feedback: s.submission_comments?.map(c => c.comment).join("\n") || ""
+      }));
+
+    res.json({ status: "success", data: { todos, feedback } });
+  } catch (error) {
+    console.error("Canvas Course Error:", error);
+    res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
+// --- ROUTE: CANVAS ASSIGNMENT ---
+app.post("/canvas/assignment", async (req, res) => {
+  try {
+    const { uid, course_id, assignment_id, assignment_name, device_id } = req.body;
+    if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
+    if (!course_id) return res.status(400).json({ status: "error", message: "Missing Course ID" });
+    if (!assignment_id && !assignment_name) return res.status(400).json({ status: "error", message: "Missing Assignment ID or Name" });
+
+    const settingsRef = getSettingsRef(uid, device_id);
+    const docSnap = await settingsRef.get();
+    if (!docSnap.exists) return res.status(404).json({ status: "error", message: "User settings not found" });
+
+    let { canvas_token, canvas_domain } = docSnap.data();
+    if (!canvas_token || !canvas_domain) return res.status(400).json({ status: "error", message: "Canvas not connected" });
+
+    canvas_domain = canvas_domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    let targetId = assignment_id;
+
+    if (!targetId && assignment_name) {
+      const searchRes = await fetch(`https://${canvas_domain}/api/v1/courses/${course_id}/assignments?search_term=${encodeURIComponent(assignment_name)}`, {
+        headers: { "Authorization": `Bearer ${canvas_token}` }
+      });
+      const searchData = await searchRes.json();
+      if (!searchData.length) return res.status(404).json({ status: "error", message: "Assignment not found" });
+      targetId = searchData[0].id;
+    }
+
+    const assignmentRes = await fetch(`https://${canvas_domain}/api/v1/courses/${course_id}/assignments/${targetId}`, {
+      headers: { "Authorization": `Bearer ${canvas_token}` }
+    });
+    if (!assignmentRes.ok) throw new Error("Failed to fetch assignment");
+    const assignment = await assignmentRes.json();
+
+    const submissionRes = await fetch(`https://${canvas_domain}/api/v1/courses/${course_id}/assignments/${targetId}/submissions/self`, {
+      headers: { "Authorization": `Bearer ${canvas_token}` }
+    });
+    const submission = submissionRes.ok ? await submissionRes.json() : {};
+
+    const courseRes = await fetch(`https://${canvas_domain}/api/v1/courses/${course_id}`, {
+      headers: { "Authorization": `Bearer ${canvas_token}` }
+    });
+    const course = courseRes.ok ? await courseRes.json() : { name: "Unknown Course" };
+
+    res.json({
+      status: "success",
+      data: {
+        course_name: course.name,
+        course_id: course.id,
+        assignment_name: assignment.name,
+        id: assignment.id,
+        marked_complete: false,
+        dismissed: false,
+        submission_status: submission.workflow_state || "unsubmitted",
+        grade: submission.grade,
+        html_url: assignment.html_url
+      }
+    });
+  } catch (error) {
+    console.error("Canvas Assignment Error:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
