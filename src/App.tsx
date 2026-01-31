@@ -9,7 +9,7 @@ import {
 import {
   Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
   Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music, Moon, Clock, Bitcoin,
-  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown,
+  Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown, Github, LifeBuoy,
   type LucideIcon
 } from 'lucide-react';
 
@@ -164,17 +164,17 @@ const ServiceCard = ({ service, onAdd }: { service: Service; onAdd: () => void }
 
       {service.configOptions && (
         <div className="absolute inset-0 bg-stone-50 p-4 flex flex-col justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-20">
-            <div className="ml-[60px]">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-1">Configuration Options</p>
-                <ul className="text-xs text-black space-y-0.5">
-                    {service.configOptions.map((opt, i) => (
-                        <li key={i} className="flex items-center gap-1.5">
-                            <div className="w-1 h-1 rounded-full bg-stone-400"></div>
-                            {opt}
-                        </li>
-                    ))}
-                </ul>
-            </div>
+          <div className="ml-[60px]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-1">Configuration Options</p>
+            <ul className="text-xs text-black space-y-0.5">
+              {service.configOptions.map((opt, i) => (
+                <li key={i} className="flex items-center gap-1.5">
+                  <div className="w-1 h-1 rounded-full bg-stone-400"></div>
+                  {opt}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
     </button>
@@ -520,7 +520,7 @@ export default function InkBridge() {
   // Auto-save Effect
   useEffect(() => {
     if (loading || !user) return;
-    
+
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
       return;
@@ -877,7 +877,7 @@ export default function InkBridge() {
 
       // Auto-populate location between WeatherAPI services
       const weatherServices = ['weather', 'astronomy', 'forecast', 'history'];
-      const locationFields: {[key: string]: string} = {
+      const locationFields: { [key: string]: string } = {
         weather: 'weather_city',
         astronomy: 'astronomy_city',
         forecast: 'forecast_city',
@@ -947,7 +947,7 @@ export default function InkBridge() {
                   <div className={`text-3xl font-bold mb-2 ${deviceStatus === 'online' ? 'text-emerald-600' : 'text-amber-500'}`}>
                     {deviceStatus === 'online' ? 'Online' : 'Linked'}
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     {userDevices.length > 1 ? (
                       <div className="relative">
@@ -970,7 +970,7 @@ export default function InkBridge() {
                       </div>
                     )}
                     {deviceStatus === 'linked' && (
-                       <span className="text-[10px] text-stone-400 italic">Waiting for connection...</span>
+                      <span className="text-[10px] text-stone-400 italic">Waiting for connection...</span>
                     )}
                   </div>
 
@@ -1007,6 +1007,44 @@ export default function InkBridge() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Support & Resources */}
+          <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-8">
+            <h3 className="text-xs font-bold text-black uppercase tracking-widest mb-4 flex items-center gap-2">
+              <LifeBuoy size={14} /> Support & Resources
+            </h3>
+            <div className="grid grid-cols-1 gap-3">
+              <a
+                href="https://github.com/Cgriz365/InkBridge"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-md border border-stone-200 hover:border-stone-400 hover:bg-stone-50 transition-all group"
+              >
+                <div className="bg-stone-100 p-2 rounded-full text-black group-hover:bg-white group-hover:shadow-sm transition-all">
+                  <Github size={18} />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-black">InkBridge Web Repo</div>
+                  <div className="text-[10px] text-stone-500">Source code for this dashboard</div>
+                </div>
+              </a>
+
+              <a
+                href="https://github.com/Cgriz365/InkBridge-ESP32"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-md border border-stone-200 hover:border-stone-400 hover:bg-stone-50 transition-all group"
+              >
+                <div className="bg-stone-100 p-2 rounded-full text-black group-hover:bg-white group-hover:shadow-sm transition-all">
+                  <Cpu size={18} />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-black">ESP32 Library Repo</div>
+                  <div className="text-[10px] text-stone-500">Arduino/PlatformIO library</div>
+                </div>
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -1174,24 +1212,24 @@ void loop() {
               isEnabled={integrations.weather_enabled as boolean}
               onRemove={() => handleRemoveService('weather')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.weather_city}
                 actions={
-                  <button 
-                    onClick={fetchWeather} 
+                  <button
+                    onClick={fetchWeather}
                     disabled={loadingWeather}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingWeather ? <RefreshCw size={14} className="animate-spin"/> : <Cloud size={14} />}
+                    {loadingWeather ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
                     Check Weather
                   </button>
                 }
                 results={weatherData && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold">{weatherData.city}</div>
-                     <div className="text-[10px] text-stone-500 mt-1">{weatherData.temp}°F - {weatherData.condition} ({weatherData.description})</div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold">{weatherData.city}</div>
+                    <div className="text-[10px] text-stone-500 mt-1">{weatherData.temp}°F - {weatherData.condition} ({weatherData.description})</div>
+                  </div>
+                )}
               >
                 <InputField label="Location" value={integrations.weather_city as string} field="weather_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
                 <CollapsibleApiKeyInput label="API Key (Optional)" value={integrations.weather_api_key as string} field="weather_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
@@ -1205,29 +1243,29 @@ void loop() {
               isEnabled={integrations.astronomy_enabled as boolean}
               onRemove={() => handleRemoveService('astronomy')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.astronomy_city}
                 actions={
-                  <button 
-                    onClick={fetchAstronomy} 
+                  <button
+                    onClick={fetchAstronomy}
                     disabled={loadingAstronomy}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingAstronomy ? <RefreshCw size={14} className="animate-spin"/> : <Moon size={14} />}
+                    {loadingAstronomy ? <RefreshCw size={14} className="animate-spin" /> : <Moon size={14} />}
                     Check Astronomy
                   </button>
                 }
                 results={astronomyData && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold">{astronomyData.location}</div>
-                     <div className="text-[10px] text-stone-500 mt-1 grid grid-cols-2 gap-x-4 gap-y-1">
-                        <span>Sun: {astronomyData.sunrise} - {astronomyData.sunset}</span>
-                        <span>Moon: {astronomyData.moon_phase} ({astronomyData.moon_illumination}%)</span>
-                        <span>Moonrise: {astronomyData.moonrise}</span>
-                        <span>Sun Up: {astronomyData.is_sun_up ? 'Yes' : 'No'}</span>
-                     </div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold">{astronomyData.location}</div>
+                    <div className="text-[10px] text-stone-500 mt-1 grid grid-cols-2 gap-x-4 gap-y-1">
+                      <span>Sun: {astronomyData.sunrise} - {astronomyData.sunset}</span>
+                      <span>Moon: {astronomyData.moon_phase} ({astronomyData.moon_illumination}%)</span>
+                      <span>Moonrise: {astronomyData.moonrise}</span>
+                      <span>Sun Up: {astronomyData.is_sun_up ? 'Yes' : 'No'}</span>
+                    </div>
+                  </div>
+                )}
               >
                 <InputField label="Location" value={integrations.astronomy_city as string} field="astronomy_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
                 <CollapsibleApiKeyInput label="API Key (Optional)" value={integrations.astronomy_api_key as string} field="astronomy_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
@@ -1241,31 +1279,31 @@ void loop() {
               isEnabled={integrations.forecast_enabled as boolean}
               onRemove={() => handleRemoveService('forecast')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.forecast_city}
                 actions={
-                  <button 
-                    onClick={fetchForecast} 
+                  <button
+                    onClick={fetchForecast}
                     disabled={loadingForecast}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingForecast ? <RefreshCw size={14} className="animate-spin"/> : <Cloud size={14} />}
+                    {loadingForecast ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
                     Check Forecast
                   </button>
                 }
                 results={forecastData && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold mb-1">{forecastData.city}</div>
-                     <div className="space-y-1">
-                       {forecastData.forecast.map((day: any, i: number) => (
-                         <div key={i} className="flex justify-between text-[10px] text-stone-500">
-                           <span>{day.date}</span>
-                           <span>{day.max_temp}° / {day.min_temp}° - {day.condition}</span>
-                         </div>
-                       ))}
-                     </div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold mb-1">{forecastData.city}</div>
+                    <div className="space-y-1">
+                      {forecastData.forecast.map((day: any, i: number) => (
+                        <div key={i} className="flex justify-between text-[10px] text-stone-500">
+                          <span>{day.date}</span>
+                          <span>{day.max_temp}° / {day.min_temp}° - {day.condition}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               >
                 <InputField label="Location" value={integrations.forecast_city as string} field="forecast_city" onChange={handleInputChange} placeholder="e.g. Denver, London" subtext="Uses WeatherAPI.com." />
                 <CollapsibleApiKeyInput label="API Key (Optional)" value={integrations.weather_api_key as string} field="weather_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
@@ -1279,31 +1317,31 @@ void loop() {
               isEnabled={integrations.history_enabled as boolean}
               onRemove={() => handleRemoveService('history')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.history_city}
                 actions={
-                  <button 
-                    onClick={fetchHistory} 
+                  <button
+                    onClick={fetchHistory}
                     disabled={loadingHistory}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingHistory ? <RefreshCw size={14} className="animate-spin"/> : <Clock size={14} />}
+                    {loadingHistory ? <RefreshCw size={14} className="animate-spin" /> : <Clock size={14} />}
                     Check History
                   </button>
                 }
                 results={historyData && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold mb-1">{historyData.city} (Last 7 Days)</div>
-                     <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                       {historyData.history.map((day: any, i: number) => (
-                         <div key={i} className="flex justify-between text-[10px] text-stone-500">
-                           <span>{day.date}</span>
-                           <span>{day.avg_temp}°F - {day.condition}</span>
-                         </div>
-                       ))}
-                     </div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold mb-1">{historyData.city} (Last 7 Days)</div>
+                    <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                      {historyData.history.map((day: any, i: number) => (
+                        <div key={i} className="flex justify-between text-[10px] text-stone-500">
+                          <span>{day.date}</span>
+                          <span>{day.avg_temp}°F - {day.condition}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               >
                 <InputField label="Location" value={integrations.history_city as string} field="history_city" onChange={handleInputChange} placeholder="e.g. Denver, London" />
                 <InputField label="End Date" value={integrations.history_date as string} field="history_date" onChange={handleInputChange} placeholder="YYYY-MM-DD" type="date" subtext="Fetches 7 days ending on this date." />
@@ -1318,24 +1356,24 @@ void loop() {
               isEnabled={integrations.stock_enabled as boolean}
               onRemove={() => handleRemoveService('stock')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.stock_symbol}
                 actions={
-                  <button 
-                    onClick={fetchStock} 
+                  <button
+                    onClick={fetchStock}
                     disabled={loadingStock}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingStock ? <RefreshCw size={14} className="animate-spin"/> : <TrendingUp size={14} />}
+                    {loadingStock ? <RefreshCw size={14} className="animate-spin" /> : <TrendingUp size={14} />}
                     Check Stock
                   </button>
                 }
                 results={stockData && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold">{stockData.symbol}</div>
-                     <div className="text-[10px] text-stone-500 mt-1">${stockData.price} ({stockData.percent > 0 ? '+' : ''}{stockData.percent}%)</div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold">{stockData.symbol}</div>
+                    <div className="text-[10px] text-stone-500 mt-1">${stockData.price} ({stockData.percent > 0 ? '+' : ''}{stockData.percent}%)</div>
+                  </div>
+                )}
               >
                 <InputField label="Stock Symbol" value={integrations.stock_symbol as string} field="stock_symbol" onChange={handleInputChange} placeholder="e.g. AAPL" subtext="Displays price and trend." />
                 <CollapsibleApiKeyInput label="Finnhub API Key (Optional)" value={integrations.stock_api_key as string} field="stock_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
@@ -1349,24 +1387,24 @@ void loop() {
               isEnabled={integrations.crypto_enabled as boolean}
               onRemove={() => handleRemoveService('crypto')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.crypto_symbol}
                 actions={
-                  <button 
-                    onClick={fetchCrypto} 
+                  <button
+                    onClick={fetchCrypto}
                     disabled={loadingCrypto}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingCrypto ? <RefreshCw size={14} className="animate-spin"/> : <Bitcoin size={14} />}
+                    {loadingCrypto ? <RefreshCw size={14} className="animate-spin" /> : <Bitcoin size={14} />}
                     Check Crypto
                   </button>
                 }
                 results={cryptoData && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold">{cryptoData.name} ({cryptoData.symbol})</div>
-                     <div className="text-[10px] text-stone-500 mt-1">${cryptoData.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ({cryptoData.percent_change_24h.toFixed(2)}%)</div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold">{cryptoData.name} ({cryptoData.symbol})</div>
+                    <div className="text-[10px] text-stone-500 mt-1">${cryptoData.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({cryptoData.percent_change_24h.toFixed(2)}%)</div>
+                  </div>
+                )}
               >
                 <InputField label="Crypto Symbol" value={integrations.crypto_symbol as string} field="crypto_symbol" onChange={handleInputChange} placeholder="e.g. BTC, ETH" subtext="CoinMarketCap symbol." />
                 <CollapsibleApiKeyInput label="CMC API Key (Optional)" value={integrations.crypto_api_key as string} field="crypto_api_key" onChange={handleInputChange} placeholder="Uses system default if empty" />
@@ -1380,43 +1418,43 @@ void loop() {
               isEnabled={integrations.calendar_enabled as boolean}
               onRemove={() => handleRemoveService('calendar')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.ical_url}
                 actions={
-                  <button 
-                    onClick={fetchCalendarEvents} 
+                  <button
+                    onClick={fetchCalendarEvents}
                     disabled={loadingCalendar}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingCalendar ? <RefreshCw size={14} className="animate-spin"/> : <Calendar size={14} />}
+                    {loadingCalendar ? <RefreshCw size={14} className="animate-spin" /> : <Calendar size={14} />}
                     Check Events
                   </button>
                 }
                 results={calendarEvents && (
-                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                     {calendarEvents.length > 0 ? (
-                       calendarEvents.map((evt: any, idx: number) => (
-                         <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                           <div className="font-bold truncate">{evt.summary}</div>
-                           <div className="text-[10px] text-stone-500 flex justify-between mt-1">
-                             <span>{new Date(evt.start).toLocaleDateString()} {new Date(evt.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                           </div>
-                         </div>
-                       ))
-                     ) : (
-                       <div className="text-xs text-stone-500 italic bg-stone-50 border border-stone-200 px-3 py-2 rounded-md">
-                         No events found.
-                       </div>
-                     )}
-                   </div>
-                 )}
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {calendarEvents.length > 0 ? (
+                      calendarEvents.map((evt: any, idx: number) => (
+                        <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                          <div className="font-bold truncate">{evt.summary}</div>
+                          <div className="text-[10px] text-stone-500 flex justify-between mt-1">
+                            <span>{new Date(evt.start).toLocaleDateString()} {new Date(evt.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-stone-500 italic bg-stone-50 border border-stone-200 px-3 py-2 rounded-md">
+                        No events found.
+                      </div>
+                    )}
+                  </div>
+                )}
               >
                 <InputField label="iCal URL" value={integrations.ical_url as string} field="ical_url" onChange={handleInputChange} placeholder="https://calendar.google.com/..." subtext="Google Calendar > Settings > Public/Secret address in iCal format." />
-                <ToggleGroup 
-                  label="Date Range" 
-                  value={integrations.calendar_range || "1d"} 
-                  field="calendar_range" 
-                  onChange={handleInputChange} 
+                <ToggleGroup
+                  label="Date Range"
+                  value={integrations.calendar_range || "1d"}
+                  field="calendar_range"
+                  onChange={handleInputChange}
                   options={[
                     { value: "1d", label: "1 Day" },
                     { value: "3d", label: "3 Days" },
@@ -1435,37 +1473,37 @@ void loop() {
               isEnabled={integrations.canvas_enabled as boolean}
               onRemove={() => handleRemoveService('canvas')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!integrations.canvas_token}
                 actions={
-                  <button 
-                    onClick={fetchCanvasAssignments} 
+                  <button
+                    onClick={fetchCanvasAssignments}
                     disabled={loadingCanvas}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingCanvas ? <RefreshCw size={14} className="animate-spin"/> : <BookOpen size={14} />}
+                    {loadingCanvas ? <RefreshCw size={14} className="animate-spin" /> : <BookOpen size={14} />}
                     Check Assignments
                   </button>
                 }
                 results={canvasAssignments && (
-                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                     {canvasAssignments.length > 0 ? (
-                       canvasAssignments.map((item: any, idx: number) => (
-                         <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                           <div className="font-bold truncate">{item.title}</div>
-                           <div className="text-[10px] text-stone-500 flex justify-between mt-1">
-                             <span>{item.due_at ? new Date(item.due_at).toLocaleDateString() : 'No Due Date'}</span>
-                             <span className="capitalize">{item.type}</span>
-                           </div>
-                         </div>
-                       ))
-                     ) : (
-                       <div className="text-xs text-stone-500 italic bg-stone-50 border border-stone-200 px-3 py-2 rounded-md">
-                         No assignments found.
-                       </div>
-                     )}
-                   </div>
-                 )}
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {canvasAssignments.length > 0 ? (
+                      canvasAssignments.map((item: any, idx: number) => (
+                        <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                          <div className="font-bold truncate">{item.title}</div>
+                          <div className="text-[10px] text-stone-500 flex justify-between mt-1">
+                            <span>{item.due_at ? new Date(item.due_at).toLocaleDateString() : 'No Due Date'}</span>
+                            <span className="capitalize">{item.type}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-stone-500 italic bg-stone-50 border border-stone-200 px-3 py-2 rounded-md">
+                        No assignments found.
+                      </div>
+                    )}
+                  </div>
+                )}
               >
                 <InputField label="Canvas Domain" value={integrations.canvas_domain as string} field="canvas_domain" onChange={handleInputChange} placeholder="canvas.instructure.com" subtext="Your school's Canvas URL." />
                 <InputField label="Access Token" value={integrations.canvas_token as string} field="canvas_token" onChange={handleInputChange} placeholder="7~..." type="password" subtext="Canvas > Account > Settings > New Access Token." />
@@ -1486,27 +1524,27 @@ void loop() {
                     <button disabled className="self-start bg-emerald-100 text-emerald-700 font-bold py-2 px-6 rounded-full text-xs flex items-center gap-2 shadow-sm border border-emerald-200 cursor-default">
                       <Check size={16} /> Spotify Connected
                     </button>
-                    
+
                     <div className="flex items-center gap-3">
-                       <button 
-                         onClick={fetchSpotifyPlayback} 
-                         disabled={loadingSpotify}
-                         className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
-                       >
-                         {loadingSpotify ? <RefreshCw size={14} className="animate-spin"/> : <Music size={14} />}
-                         Check Now
-                       </button>
-                       {spotifyPlayback && (
-                         <div className="text-xs text-black bg-white border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                           {spotifyPlayback.item ? (
-                             <span>
-                               <strong>{spotifyPlayback.item.name}</strong> by {spotifyPlayback.item.artists.map((a: any) => a.name).join(', ')}
-                             </span>
-                           ) : (
-                             <span className="text-stone-500 italic">Nothing playing</span>
-                           )}
-                         </div>
-                       )}
+                      <button
+                        onClick={fetchSpotifyPlayback}
+                        disabled={loadingSpotify}
+                        className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                      >
+                        {loadingSpotify ? <RefreshCw size={14} className="animate-spin" /> : <Music size={14} />}
+                        Check Now
+                      </button>
+                      {spotifyPlayback && (
+                        <div className="text-xs text-black bg-white border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                          {spotifyPlayback.item ? (
+                            <span>
+                              <strong>{spotifyPlayback.item.name}</strong> by {spotifyPlayback.item.artists.map((a: any) => a.name).join(', ')}
+                            </span>
+                          ) : (
+                            <span className="text-stone-500 italic">Nothing playing</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -1524,32 +1562,32 @@ void loop() {
               isEnabled={integrations.travel_enabled as boolean}
               onRemove={() => handleRemoveService('travel')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={!!(integrations.travel_origin && integrations.travel_destination)}
                 actions={
-                  <button 
-                    onClick={fetchTravel} 
+                  <button
+                    onClick={fetchTravel}
                     disabled={loadingTravel}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingTravel ? <RefreshCw size={14} className="animate-spin"/> : <MapPin size={14} />}
+                    {loadingTravel ? <RefreshCw size={14} className="animate-spin" /> : <MapPin size={14} />}
                     Check Commute
                   </button>
                 }
                 results={travelData && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold">{travelData.duration}</div>
-                     <div className="text-[10px] text-stone-500 mt-1">{travelData.distance} to {travelData.destination}</div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold">{travelData.duration}</div>
+                    <div className="text-[10px] text-stone-500 mt-1">{travelData.distance} to {travelData.destination}</div>
+                  </div>
+                )}
               >
                 <InputField label="Origin" value={integrations.travel_origin as string} field="travel_origin" onChange={handleInputChange} placeholder="e.g. 123 Home St, Denver CO" />
                 <InputField label="Destination" value={integrations.travel_destination as string} field="travel_destination" onChange={handleInputChange} placeholder="e.g. Work Office" />
-                <ToggleGroup 
-                  label="Mode" 
-                  value={integrations.travel_mode as string} 
-                  field="travel_mode" 
-                  onChange={handleInputChange} 
+                <ToggleGroup
+                  label="Mode"
+                  value={integrations.travel_mode as string}
+                  field="travel_mode"
+                  onChange={handleInputChange}
                   options={[
                     { value: "driving", label: "Driving" },
                     { value: "transit", label: "Transit" },
@@ -1568,30 +1606,30 @@ void loop() {
               isEnabled={integrations.news_enabled as boolean}
               onRemove={() => handleRemoveService('news')}
             >
-              <IntegrationSettings 
+              <IntegrationSettings
                 isConfigured={true}
                 actions={
-                  <button 
-                    onClick={fetchNews} 
+                  <button
+                    onClick={fetchNews}
                     disabled={loadingNews}
                     className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
                   >
-                    {loadingNews ? <RefreshCw size={14} className="animate-spin"/> : <Newspaper size={14} />}
+                    {loadingNews ? <RefreshCw size={14} className="animate-spin" /> : <Newspaper size={14} />}
                     Check News
                   </button>
                 }
                 results={newsData && newsData.length > 0 && (
-                   <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                     <div className="font-bold truncate">{newsData[0].title}</div>
-                     <div className="text-[10px] text-stone-500 mt-1">{newsData[0].source}</div>
-                   </div>
-                 )}
+                  <div className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
+                    <div className="font-bold truncate">{newsData[0].title}</div>
+                    <div className="text-[10px] text-stone-500 mt-1">{newsData[0].source}</div>
+                  </div>
+                )}
               >
-                <ToggleGroup 
-                  label="Category" 
-                  value={integrations.news_category as string} 
-                  field="news_category" 
-                  onChange={handleInputChange} 
+                <ToggleGroup
+                  label="Category"
+                  value={integrations.news_category as string}
+                  field="news_category"
+                  onChange={handleInputChange}
                   options={[
                     { value: "general", label: "General" },
                     { value: "technology", label: "Tech" },

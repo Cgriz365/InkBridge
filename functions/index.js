@@ -248,9 +248,9 @@ app.post("/spotify/user_albums", async (req, res) => {
 
     const queryLimit = limit || 5;
     const queryOffset = offset || 0;
-    
+
     const data = await makeSpotifyRequest(uid, `me/albums?limit=${queryLimit}&offset=${queryOffset}`, "GET", null, device_id);
-    
+
     const albums = data.items.map(item => ({
       name: item.album.name,
       artist: item.album.artists.map(a => a.name).join(", "),
@@ -274,7 +274,7 @@ app.post("/spotify/user_playlists", async (req, res) => {
     const queryOffset = offset || 0;
 
     const data = await makeSpotifyRequest(uid, `me/playlists?limit=${queryLimit}&offset=${queryOffset}`, "GET", null, device_id);
-    
+
     const playlists = data.items.map(item => ({
       name: item.name,
       owner: item.owner.display_name,
@@ -299,7 +299,7 @@ app.post("/spotify/liked_songs", async (req, res) => {
     const queryOffset = offset || 0;
 
     const data = await makeSpotifyRequest(uid, `me/tracks?limit=${queryLimit}&offset=${queryOffset}`, "GET", null, device_id);
-    
+
     const tracks = data.items.map(item => ({
       name: item.track.name,
       artist: item.track.artists.map(a => a.name).join(", "),
@@ -325,7 +325,7 @@ app.post("/spotify/followed_artists", async (req, res) => {
     const queryAfter = after ? `&after=${after}` : "";
 
     const data = await makeSpotifyRequest(uid, `me/following?type=artist&limit=${queryLimit}${queryAfter}`, "GET", null, device_id);
-    
+
     const artists = data.artists.items.map(item => ({
       name: item.name,
       image: item.images[0]?.url || null,
@@ -353,8 +353,8 @@ app.post("/spotify/playback", async (req, res) => {
       case "play":
         endpoint = "me/player/play";
         if (uri) {
-            if (uri.includes("track")) body = { uris: [uri] };
-            else body = { context_uri: uri };
+          if (uri.includes("track")) body = { uris: [uri] };
+          else body = { context_uri: uri };
         }
         break;
       case "pause":
@@ -403,7 +403,7 @@ app.post("/spotify/devices", async (req, res) => {
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const data = await makeSpotifyRequest(uid, "me/player/devices", "GET", null, device_id);
-    
+
     const devices = data.devices.map(d => ({
       id: d.id,
       name: d.name,
@@ -477,9 +477,9 @@ app.post("/calendar", async (req, res) => {
         }
         let organizer = null;
         if (evt.organizer) {
-           if (typeof evt.organizer === 'string') organizer = evt.organizer;
-           else if (evt.organizer.params && evt.organizer.params.CN) organizer = evt.organizer.params.CN;
-           else if (evt.organizer.val) organizer = evt.organizer.val;
+          if (typeof evt.organizer === 'string') organizer = evt.organizer;
+          else if (evt.organizer.params && evt.organizer.params.CN) organizer = evt.organizer.params.CN;
+          else if (evt.organizer.val) organizer = evt.organizer.val;
         }
         return {
           name: evt.summary,
@@ -658,7 +658,7 @@ app.post("/canvas/course", async (req, res) => {
       headers: { "Authorization": `Bearer ${canvas_token}` }
     });
     const assignmentsData = await assignmentsRes.json();
-    
+
     const todos = assignmentsData.map(a => ({
       name: a.name,
       id: a.id,
@@ -836,15 +836,15 @@ app.post("/weather/history", async (req, res) => {
 
     const { history_city, history_date, weather_api_key } = docSnap.data();
     const queryCity = location || history_city;
-    
+
     // Default to today if no date provided
     const targetDateStr = date || history_date || new Date().toISOString().split('T')[0];
-    
+
     // Calculate range (7 days ending on target date)
     const endDate = new Date(targetDateStr);
     const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - 6); 
-    
+    startDate.setDate(startDate.getDate() - 6);
+
     const dtStr = startDate.toISOString().split('T')[0];
     const endDtStr = endDate.toISOString().split('T')[0];
 
@@ -949,7 +949,9 @@ app.post("/stock", async (req, res) => {
         price: data.c,
         percent: data.dp,
         high: data.h,
-        low: data.l
+        low: data.l,
+        open: data.o,
+        previous_close: data.pc
       }
     });
   } catch (error) {
@@ -1005,7 +1007,7 @@ app.post("/travel", async (req, res) => {
 // --- ROUTE: NEWS ---
 app.post("/news", async (req, res) => {
   try {
-    const { uid, category, device_id } = req.body;
+    const { uid, category, search, limit, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const settingsRef = getSettingsRef(uid, device_id);
@@ -1015,18 +1017,25 @@ app.post("/news", async (req, res) => {
 
     const settings = docSnap.data();
     const queryCategory = category || settings.news_category || "general";
+    const querySearch = search ? `&q=${encodeURIComponent(search)}` : "";
+    const queryLimit = limit || 5;
     const apiKey = settings.news_api_key || NEWS_API_KEY.value();
 
     if (!apiKey) return res.status(500).json({ status: "error", message: "News API Key not configured" });
 
-    const response = await fetch(`https://newsapi.org/v2/top-headlines?country=us&category=${queryCategory}&apiKey=${apiKey}`);
+    const response = await fetch(`https://newsapi.org/v2/top-headlines?country=us&category=${queryCategory}${querySearch}&pageSize=${queryLimit}&apiKey=${apiKey}`);
     if (!response.ok) {
       const errText = await response.text();
       throw new Error(`NewsAPI Error ${response.status}: ${errText}`);
     }
 
     const data = await response.json();
-    const articles = data.articles.slice(0, 5).map(a => ({ title: a.title, source: a.source.name }));
+    const articles = data.articles.map(a => ({
+      title: a.title,
+      source: a.source.name,
+      description: a.description,
+      published_at: a.publishedAt
+    }));
     res.json({ status: "success", data: articles });
   } catch (error) {
     console.error("News Error:", error);
@@ -1062,11 +1071,21 @@ app.post("/crypto", async (req, res) => {
 
     const data = await response.json();
     const coinData = data.data[querySymbol.toUpperCase()];
-    
+
     if (!coinData) throw new Error("Symbol not found");
 
     const quote = coinData.quote.USD;
-    res.json({ status: "success", data: { symbol: coinData.symbol, name: coinData.name, price: quote.price, percent_change_24h: quote.percent_change_24h } });
+    res.json({
+      status: "success",
+      data: {
+        symbol: coinData.symbol,
+        name: coinData.name,
+        price: quote.price,
+        percent_change_24h: quote.percent_change_24h,
+        market_cap: quote.market_cap,
+        volume_24h: quote.volume_24h
+      }
+    });
   } catch (error) {
     console.error("Crypto Error:", error);
     res.status(500).json({ status: "error", message: error.message });
@@ -1076,7 +1095,7 @@ app.post("/crypto", async (req, res) => {
 // --- ROUTE: STOCK ARRAY ---
 app.post("/stock/array", async (req, res) => {
   try {
-    const { uid, symbol, days, device_id } = req.body;
+    const { uid, symbol, days, interval, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const settingsRef = getSettingsRef(uid, device_id);
@@ -1091,20 +1110,21 @@ app.post("/stock/array", async (req, res) => {
     if (!apiKey) return res.status(500).json({ status: "error", message: "Server API Key not configured" });
 
     const numDays = days || 7;
+    const resolution = interval || "D";
     const to = Math.floor(Date.now() / 1000);
     const from = to - (numDays * 24 * 60 * 60);
 
-    const response = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(querySymbol)}&resolution=D&from=${from}&to=${to}&token=${apiKey}`);
-    
+    const response = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(querySymbol)}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`);
+
     if (!response.ok) {
       const errText = await response.text();
       throw new Error(`Finnhub Error ${response.status}: ${errText}`);
     }
 
     const data = await response.json();
-    
+
     if (data.s === "no_data") {
-        return res.json({ status: "success", data: [] });
+      return res.json({ status: "success", data: [] });
     }
 
     const chartData = data.t.map((timestamp, index) => ({
@@ -1122,7 +1142,7 @@ app.post("/stock/array", async (req, res) => {
 // --- ROUTE: CRYPTO ARRAY ---
 app.post("/crypto/array", async (req, res) => {
   try {
-    const { uid, symbol, days, device_id } = req.body;
+    const { uid, symbol, days, interval, device_id } = req.body;
     if (!uid) return res.status(400).json({ status: "error", message: "Missing UID" });
 
     const settingsRef = getSettingsRef(uid, device_id);
@@ -1135,7 +1155,15 @@ app.post("/crypto/array", async (req, res) => {
 
     // Using CryptoCompare for historical data as it supports symbols directly and has a free tier
     const numDays = days || 7;
-    const response = await fetch(`https://min-api.cryptocompare.com/data/v2/histoday?fsym=${querySymbol.toUpperCase()}&tsym=USD&limit=${numDays}`);
+    let endpoint = "histoday";
+    let limit = numDays;
+
+    if (interval === "hourly") {
+      endpoint = "histohour";
+      limit = numDays * 24; // Convert days to hours for the limit
+    }
+
+    const response = await fetch(`https://min-api.cryptocompare.com/data/v2/${endpoint}?fsym=${querySymbol.toUpperCase()}&tsym=USD&limit=${limit}`);
 
     if (!response.ok) {
       const errText = await response.text();
@@ -1143,9 +1171,9 @@ app.post("/crypto/array", async (req, res) => {
     }
 
     const data = await response.json();
-    
+
     if (data.Response === "Error") {
-        throw new Error(data.Message);
+      throw new Error(data.Message);
     }
 
     const chartData = data.Data.Data.map(item => ({

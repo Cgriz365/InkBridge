@@ -51,11 +51,11 @@ The backend is built using Firebase Functions and Express. It serves as the brid
 | `/weather/history` | POST | Fetches historical weather data. Optional params: `location`, `date`. |
 | `/astronomy` | POST | Fetches astronomical data (sunrise, sunset, moon phase). Optional params: `location`. |
 | `/stock` | POST | Fetches real-time stock quotes. Optional params: `symbol`. |
-| `/stock/array` | POST | Fetches historical stock candle data. Optional params: `symbol`, `days`. |
+| `/stock/array` | POST | Fetches historical stock candle data. Optional params: `symbol`, `days`, `interval`. |
 | `/crypto` | POST | Fetches real-time cryptocurrency quotes. Optional params: `symbol`. |
-| `/crypto/array` | POST | Fetches historical cryptocurrency price data. Optional params: `symbol`, `days`. |
+| `/crypto/array` | POST | Fetches historical cryptocurrency price data. Optional params: `symbol`, `days`, `interval`. |
 | `/travel` | POST | Fetches travel time and distance. Optional params: `origin`, `destination`, `mode`. |
-| `/news` | POST | Fetches top headlines. Optional params: `category`. |
+| `/news` | POST | Fetches top headlines. Optional params: `category`, `search`, `limit`. |
 
 ## Frontend Analysis
 
@@ -428,7 +428,9 @@ Driven by Finnhub API to pull realtime stock information.
     "price": 142.50,
     "percent": 2.45,
     "high": 144.10,
-    "low": 139.80
+    "low": 139.80,
+    "open": 140.00,
+    "previous_close": 139.10
   }
 }
 ```
@@ -578,7 +580,7 @@ Driven by Google Maps Distance Matrix API to pull realtime travel and traffic in
 
 ### News Headlines Flow ###
 Driven by NewsAPI to pull current headlines from different categories of interest.
-1. **Trigger**: User calls `/news` with optional parameter `category`.
+1. **Trigger**: User calls `/news` with optional parameters `category`, `search`, and `limit`.
 2. **Return**: Returns a json with data and a success or failure message.
 
 *Example `/news` Success Return*:
@@ -588,23 +590,21 @@ Driven by NewsAPI to pull current headlines from different categories of interes
   "data": [
     {
       "title": "NVIDIA announces new RTX 50-series GPUs with AI capabilities",
-      "source": "The Verge"
+      "source": "The Verge",
+      "description": "NVIDIA has unveiled its latest generation of graphics cards...",
+      "published_at": "2026-01-15T14:30:00Z"
     },
     {
       "title": "SpaceX Starship successfully completes orbital refueling test",
-      "source": "TechCrunch"
+      "source": "TechCrunch",
+      "description": "In a major milestone for deep space exploration...",
+      "published_at": "2026-01-15T12:15:00Z"
     },
     {
       "title": "Apple releases iOS 19.3 with major security patches",
-      "source": "MacRumors"
-    },
-    {
-      "title": "Microsoft and OpenAI unveil GPT-6 preview for enterprise",
-      "source": "CNBC"
-    },
-    {
-      "title": "New solid-state battery breakthrough promises 1000-mile EV range",
-      "source": "Ars Technica"
+      "source": "MacRumors",
+      "description": "The latest iOS update addresses critical vulnerabilities...",
+      "published_at": "2026-01-15T10:00:00Z"
     }
   ]
 }
