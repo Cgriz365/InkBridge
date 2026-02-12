@@ -621,3 +621,5 @@ Driven by NewsAPI to pull current headlines from different categories of interes
 ### Backend Development (Node JS)
 
 ### Frontend Development (Typescript)
+
+*Documentation primarily written by AI (Gemini + Claude), however it has been thorougly checked* 
