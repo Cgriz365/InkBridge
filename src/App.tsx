@@ -619,7 +619,7 @@ export default function InkBridge() {
       });
       const result = await response.json();
       if (result.status === 'success') {
-        setCalendarEvents(result.data);
+        setCalendarEvents(result.data.events);
       } else {
         console.error("Calendar API Error:", result.message);
         setCalendarEvents(null);
@@ -1435,7 +1435,7 @@ void loop() {
                     {calendarEvents.length > 0 ? (
                       calendarEvents.map((evt: any, idx: number) => (
                         <div key={idx} className="text-xs text-black bg-stone-50 border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                          <div className="font-bold truncate">{evt.summary}</div>
+                          <div className="font-bold truncate">{evt.name}</div>
                           <div className="text-[10px] text-stone-500 flex justify-between mt-1">
                             <span>{new Date(evt.start).toLocaleDateString()} {new Date(evt.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
