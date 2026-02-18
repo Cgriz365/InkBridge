@@ -9,7 +9,7 @@ import {
 import {
     Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
     Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music, Moon, Clock, Bitcoin,
-    Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown, Github, LifeBuoy, Layout, GripVertical,
+    Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown, Github, LifeBuoy,
     type LucideIcon
 } from 'lucide-react';
 
@@ -55,9 +55,6 @@ interface IntegrationState {
     news_enabled: boolean;
     news_category: string;
     news_api_key: string;
-    layout_type: string;
-    layout_slots: string; // JSON string
-    enable_layouts: boolean;
     [key: string]: string | boolean; // Index signature for dynamic access
 }
 
@@ -132,9 +129,6 @@ const INITIAL_INTEGRATIONS: IntegrationState = {
     news_enabled: false,
     news_category: "general",
     news_api_key: "",
-    layout_type: "quadrant",
-    layout_slots: "{}",
-    enable_layouts: false
 };
 
 // --- SUB-COMPONENTS ---
@@ -331,7 +325,7 @@ export default function InkBridge() {
     const [loading, setLoading] = useState(true);
 
     // Navigation State
-    const [currentView, setCurrentView] = useState<'dashboard' | 'integrations' | 'setup' | 'layout'>('dashboard');
+    const [currentView, setCurrentView] = useState<'dashboard' | 'integrations' | 'setup'>('dashboard');
 
     // InkBridge Data
     const [userApiKey, setUserApiKey] = useState<string>("");
@@ -396,13 +390,6 @@ export default function InkBridge() {
     // News State
     const [newsData, setNewsData] = useState<any>(null);
     const [loadingNews, setLoadingNews] = useState(false);
-
-    // Layout Preview State
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [loadingPreview, setLoadingPreview] = useState(false);
-
-    // Drag and Drop State
-    const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
 
     // NEW: Listen for Device Handshake
     useEffect(() => {
@@ -880,32 +867,6 @@ export default function InkBridge() {
         }
     };
 
-    const fetchLayoutPreview = async () => {
-        if (!user || !activeDeviceId) return;
-        setLoadingPreview(true);
-
-        // Force save to ensure backend has latest config
-        await saveIntegrations();
-
-        try {
-            const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
-            const url = `${apiUrl}/layout/background?uid=${user.uid}&device_id=${activeDeviceId}&t=${Date.now()}&skip_heartbeat=true`;
-
-            const response = await fetch(url);
-            if (response.ok) {
-                const blob = await response.blob();
-                const objectUrl = URL.createObjectURL(blob);
-                setPreviewUrl(objectUrl);
-            } else {
-                console.error("Failed to fetch preview");
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoadingPreview(false);
-        }
-    };
-
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text);
     };
@@ -941,229 +902,6 @@ export default function InkBridge() {
 
     const handleInputChange = (field: string, value: string | boolean) => {
         setIntegrations((prev) => ({ ...prev, [field]: value }));
-    };
-
-    const handleLayoutTypeChange = (type: string) => {
-        setIntegrations(prev => ({ ...prev, layout_type: type }));
-    };
-
-    const handleSlotAssign = (slotId: string, serviceId: string) => {
-        const allSlots = JSON.parse(integrations.layout_slots as string || "{}");
-        const currentType = integrations.layout_type;
-
-        if (!allSlots[currentType]) allSlots[currentType] = {};
-
-        if (serviceId) {
-            allSlots[currentType][slotId] = serviceId;
-        } else {
-            delete allSlots[currentType][slotId];
-        }
-
-        setIntegrations(prev => ({ ...prev, layout_slots: JSON.stringify(allSlots) }));
-    };
-
-    const onDragStart = (e: React.DragEvent, widgetId: string) => {
-        setDraggedWidget(widgetId);
-        e.dataTransfer.setData("text/plain", widgetId);
-        e.dataTransfer.effectAllowed = "copy";
-    };
-
-    const onDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-    };
-
-    const onDrop = (e: React.DragEvent, slotId: string) => {
-        e.preventDefault();
-        if (draggedWidget) {
-            handleSlotAssign(slotId, draggedWidget);
-            setDraggedWidget(null);
-        }
-    };
-
-    const renderLayoutPage = () => {
-        const allSlots = JSON.parse(integrations.layout_slots as string || "{}");
-        let slots = allSlots[integrations.layout_type] || {};
-
-        // Fallback for flat structure
-        if (Object.keys(slots).length === 0 && Object.keys(allSlots).length > 0 && !allSlots[integrations.layout_type]) {
-            const isFlat = Object.values(allSlots).every(v => typeof v === 'string');
-            if (isFlat) slots = allSlots;
-        }
-
-        const enabledServices = AVAILABLE_SERVICES.filter(s => integrations[`${s.id}_enabled`]);
-
-        const renderSlot = (id: string, label: string, heightClass: string = "h-40") => (
-            <div
-                className={`border-2 border-dashed rounded-lg flex flex-col items-center justify-center relative overflow-hidden transition-all ${draggedWidget ? 'border-blue-400 bg-blue-50' : 'border-stone-300 bg-stone-50 hover:border-stone-400'} ${heightClass}`}
-                onDragOver={onDragOver}
-                onDrop={(e) => onDrop(e, id)}
-            >
-                <div className="absolute top-2 left-2 text-[10px] font-bold text-stone-400 uppercase tracking-wider bg-white px-1.5 py-0.5 rounded border border-stone-200 pointer-events-none">
-                    {label}
-                </div>
-
-                {slots[id] ? (
-                    <div className="flex flex-col items-center gap-2 z-10 w-full h-full justify-center group">
-                        {(() => {
-                            const s = AVAILABLE_SERVICES.find(srv => srv.id === slots[id]);
-                            const Icon = s?.icon || Activity;
-                            return (
-                                <>
-                                    <Icon size={32} className="text-black" />
-                                    <span className="font-bold text-sm text-black">{s?.name || slots[id]}</span>
-                                </>
-                            );
-                        })()}
-                        <button
-                            onClick={() => handleSlotAssign(id, "")}
-                            className="absolute top-2 right-2 p-1 bg-white rounded-full shadow-sm border border-stone-200 text-stone-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Clear Slot"
-                        >
-                            <X size={14} />
-                        </button>
-                    </div>
-                ) : (
-                    <div className="z-10 flex flex-col items-center pointer-events-none">
-                        <p className="text-xs text-stone-400">Drop Widget Here</p>
-                    </div>
-                )}
-            </div>
-        );
-
-        return (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                <div className="mb-8 border-b border-stone-200 pb-6 text-center">
-                    <h1 className="text-4xl font-bold text-black">Display Layout</h1>
-                    <p className="text-black mt-2 text-xl font-medium">Configure how widgets appear on your E-Ink display.</p>
-                </div>
-
-                <div className="flex justify-end gap-3 mb-6">
-                    <button
-                        onClick={fetchLayoutPreview}
-                        disabled={loadingPreview}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold bg-white text-black hover:bg-stone-50 transition-all text-sm border border-stone-300 shadow-sm hover:shadow"
-                    >
-                        {loadingPreview ? <RefreshCw size={16} className="animate-spin" /> : <Eye size={16} />}
-                        Preview Output
-                    </button>
-                    <div className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold transition-all text-xs ${saveState === 'saved' ? 'text-emerald-600 bg-emerald-50 border border-emerald-100' : saveState === 'saving' ? 'text-stone-500 bg-stone-100' : 'text-stone-400 bg-stone-50 border border-stone-100'}`}>
-                        {saveState === 'saving' && <RefreshCw size={12} className="animate-spin" />}
-                        {(saveState === 'saved' || saveState === 'idle') && <Check size={12} />}
-                        {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'No Changes'}
-                    </div>
-                </div>
-
-                {previewUrl && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-stone-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => setPreviewUrl(null)}>
-                        <div className="bg-white p-2 rounded-lg shadow-2xl max-w-4xl w-full relative" onClick={e => e.stopPropagation()}>
-                            <button
-                                onClick={() => setPreviewUrl(null)}
-                                className="absolute -top-4 -right-4 bg-white text-black p-2 rounded-full shadow-lg hover:bg-stone-100 transition-colors"
-                            >
-                                <X size={20} />
-                            </button>
-                            <div className="bg-stone-100 rounded border border-stone-200 overflow-hidden">
-                                <img src={previewUrl} alt="Layout Preview" className="w-full h-auto" />
-                            </div>
-                            <div className="mt-2 text-center">
-                                <p className="text-xs text-stone-500">Actual 800x480 rendering from device API.</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-2 space-y-6">
-                        <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-8">
-                            <div className="mb-6">
-                                <label className="block text-xs font-bold uppercase tracking-widest text-black mb-3">Layout Preset</label>
-                                <div className="flex gap-3">
-                                    {[
-                                        { id: 'quadrant', name: '4-Grid', icon: <div className="grid grid-cols-2 gap-0.5 w-6 h-4"><div className="bg-current" /><div className="bg-current" /><div className="bg-current" /><div className="bg-current" /></div> },
-                                        { id: 'thirds', name: '3-Columns', icon: <div className="grid grid-cols-3 gap-0.5 w-6 h-4"><div className="bg-current" /><div className="bg-current" /><div className="bg-current" /></div> },
-                                        { id: 'focus', name: 'Focus', icon: <div className="flex flex-col gap-0.5 w-6 h-4"><div className="bg-current h-2" /><div className="grid grid-cols-2 gap-0.5 h-2"><div className="bg-current" /><div className="bg-current" /></div></div> },
-                                        { id: 'single', name: 'Single', icon: <div className="w-6 h-4 bg-current" /> }
-                                    ].map(type => (
-                                        <button
-                                            key={type.id}
-                                            onClick={() => handleLayoutTypeChange(type.id)}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-md border text-sm font-medium transition-all ${integrations.layout_type === type.id ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200 hover:border-stone-400'}`}
-                                        >
-                                            {type.icon}
-                                            {type.name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="bg-stone-100 p-6 rounded-lg border border-stone-200">
-                                <div className="aspect-[800/480] bg-white shadow-sm border border-stone-300 p-1">
-                                    {integrations.layout_type === 'quadrant' && (
-                                        <div className="grid grid-cols-2 grid-rows-2 gap-1 h-full">
-                                            {renderSlot("0", "Top Left", "h-full")}
-                                            {renderSlot("1", "Top Right", "h-full")}
-                                            {renderSlot("2", "Bottom Left", "h-full")}
-                                            {renderSlot("3", "Bottom Right", "h-full")}
-                                        </div>
-                                    )}
-                                    {integrations.layout_type === 'thirds' && (
-                                        <div className="grid grid-cols-3 gap-1 h-full">
-                                            {renderSlot("0", "Left", "h-full")}
-                                            {renderSlot("1", "Center", "h-full")}
-                                            {renderSlot("2", "Right", "h-full")}
-                                        </div>
-                                    )}
-                                    {integrations.layout_type === 'focus' && (
-                                        <div className="flex flex-col gap-1 h-full">
-                                            {renderSlot("0", "Header / Main", "h-1/2")}
-                                            <div className="grid grid-cols-2 gap-1 h-1/2">
-                                                {renderSlot("1", "Bottom Left", "h-full")}
-                                                {renderSlot("2", "Bottom Right", "h-full")}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {integrations.layout_type === 'single' && (
-                                        <div className="h-full">
-                                            {renderSlot("0", "Full Screen", "h-full")}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-4">
-                        <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-6 sticky top-24">
-                            <h3 className="text-xs font-bold uppercase tracking-widest text-black mb-4">Available Widgets</h3>
-                            <div className="space-y-2">
-                                {enabledServices.length === 0 ? (
-                                    <p className="text-xs text-stone-400 italic">No services enabled. Go to Integrations to enable widgets.</p>
-                                ) : (
-                                    enabledServices.map(s => (
-                                        <div
-                                            key={s.id}
-                                            draggable
-                                            onDragStart={(e) => onDragStart(e, s.id)}
-                                            className="flex items-center gap-3 p-3 bg-stone-50 border border-stone-200 rounded-md cursor-grab active:cursor-grabbing hover:border-stone-400 hover:shadow-sm transition-all"
-                                        >
-                                            <GripVertical size={16} className="text-stone-400" />
-                                            <s.icon size={20} className="text-black" />
-                                            <span className="text-sm font-medium text-black">{s.name}</span>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                            <div className="mt-6 p-4 bg-blue-50 rounded-md border border-blue-100">
-                                <p className="text-xs text-blue-800">
-                                    <strong>Tip:</strong> Drag widgets from this list into the layout slots on the left.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
     };
 
     // --- INTERNAL RENDER FUNCTIONS ---
@@ -1399,25 +1137,6 @@ void loop() {
   // 2. Parse JSON & Render
   // 3. Deep Sleep
 }`}</pre>
-                            </div>
-                        </div>
-
-                        {/* Developer Options */}
-                        <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-8">
-                            <h2 className="text-xs font-bold uppercase tracking-widest text-black mb-4 flex items-center gap-2">
-                                <Sliders size={16} /> Developer Options
-                            </h2>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-bold text-black">Enable Layout Editor</p>
-                                    <p className="text-xs text-stone-500">Show the experimental layout configuration tab.</p>
-                                </div>
-                                <button
-                                    onClick={() => handleInputChange('enable_layouts', !integrations.enable_layouts)}
-                                    className={`w-9 h-5 rounded-full relative transition-colors ${integrations.enable_layouts ? 'bg-stone-900' : 'bg-stone-200'}`}
-                                >
-                                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${integrations.enable_layouts ? 'translate-x-4' : ''}`} />
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -1956,9 +1675,6 @@ void loop() {
                         <div className="hidden md:flex gap-2 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
                             <NavButton active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} icon={Home} label="Dashboard" />
                             <NavButton active={currentView === 'integrations'} onClick={() => setCurrentView('integrations')} icon={Sliders} label="Integrations" />
-                            {integrations.enable_layouts && (
-                                <NavButton active={currentView === 'layout'} onClick={() => setCurrentView('layout')} icon={Layout} label="Layout" />
-                            )}
                             <NavButton active={currentView === 'setup'} onClick={() => setCurrentView('setup')} icon={Smartphone} label="Setup" />
                         </div>
                     )}
@@ -1984,9 +1700,6 @@ void loop() {
                     <div className="md:hidden flex justify-center gap-2 pb-3 border-t border-stone-100 pt-3 bg-white">
                         <NavButton active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} icon={Home} label="Dash" />
                         <NavButton active={currentView === 'integrations'} onClick={() => setCurrentView('integrations')} icon={Sliders} label="Integrations" />
-                        {integrations.enable_layouts && (
-                            <NavButton active={currentView === 'layout'} onClick={() => setCurrentView('layout')} icon={Layout} label="Layout" />
-                        )}
                         <NavButton active={currentView === 'setup'} onClick={() => setCurrentView('setup')} icon={Smartphone} label="Setup" />
                     </div>
                 )}
@@ -2006,7 +1719,6 @@ void loop() {
                         {currentView === 'dashboard' && renderDashboardPage()}
                         {currentView === 'setup' && renderSetupPage()}
                         {currentView === 'integrations' && renderIntegrationsPage()}
-                        {currentView === 'layout' && renderLayoutPage()}
                     </>
                 )}
             </main>
