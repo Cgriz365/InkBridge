@@ -10,7 +10,8 @@ import {
     Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
     Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music, Moon, Clock, Bitcoin,
     Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown, Github, LifeBuoy,
-    type LucideIcon
+    type LucideIcon,
+    Layout as LayoutIcon
 } from 'lucide-react';
 
 // --- TYPES ---
@@ -325,7 +326,9 @@ export default function InkBridge() {
     const [loading, setLoading] = useState(true);
 
     // Navigation State
-    const [currentView, setCurrentView] = useState<'dashboard' | 'integrations' | 'setup'>('dashboard');
+    const [currentView, setCurrentView] = useState<'dashboard' | 'integrations' | 'setup' | 'layout'>('dashboard');
+    const [developerMode, setDeveloperMode] = useState<boolean>(false);
+
 
     // InkBridge Data
     const [userApiKey, setUserApiKey] = useState<string>("");
@@ -342,6 +345,7 @@ export default function InkBridge() {
     // Integrations State
     const [integrations, setIntegrations] = useState<IntegrationState>(INITIAL_INTEGRATIONS);
 
+    const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [isBrowserOpen, setIsBrowserOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
@@ -1141,6 +1145,23 @@ void loop() {
                         </div>
                     </div>
                 </div>
+                <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-8 mt-8">
+                    <h2 className="text-xs font-bold uppercase tracking-widest text-black mb-6 flex items-center gap-2"><Settings size={16} /> Developer Mode</h2>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-[13px] text-black mb-1">Enable developer-specific features, such as the layout editor.</p>
+                            <p className="text-[11px] text-stone-500">This will reveal the 'Layout' tab in the navigation.</p>
+                        </div>
+                        <button
+                            onClick={() => setDeveloperMode(!developerMode)}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 ${developerMode ? 'bg-black' : 'bg-stone-200'}`}
+                        >
+                            <span
+                                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${developerMode ? 'translate-x-5' : 'translate-x-0'}`}
+                            />
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     };
@@ -1655,6 +1676,253 @@ void loop() {
         );
     };
 
+    const renderLayoutPage = () => {
+        const enabledServices = AVAILABLE_SERVICES.filter(s => integrations[`${s.id}_enabled`]);
+
+        // Determine Layout Config
+        const currentStyle = (integrations.layout_style as string) || 'quadrants';
+        let maxSlots = 4;
+        let gridClass = 'grid-cols-2 grid-rows-2';
+
+        if (currentStyle === 'halves') {
+            maxSlots = 2;
+            gridClass = 'grid-cols-1 grid-rows-2';
+        } else if (currentStyle === 'thirds') {
+            maxSlots = 3;
+            gridClass = 'grid-cols-3 grid-rows-1';
+        } else if (currentStyle === 'focus') {
+            maxSlots = 4;
+            gridClass = 'grid-cols-3 grid-rows-3';
+        }
+
+        // Parse current order into slots
+        const rawOrder = (integrations.layout_order as string)?.split(',') || [];
+        const currentSlots = Array(maxSlots).fill(null).map((_, i) => {
+            const id = rawOrder[i];
+            return (id && id !== 'null' && id !== '') ? id : null;
+        });
+
+        // Filter available widgets (not currently placed)
+        const placedIds = new Set(currentSlots.filter(Boolean));
+        const availableWidgets = enabledServices.filter(s => !placedIds.has(s.id));
+
+        const dispW = parseInt(integrations.display_width as string) || 800;
+        const dispH = parseInt(integrations.display_height as string) || 480;
+
+        const handleDragStart = (e: React.DragEvent, serviceId: string) => {
+            e.dataTransfer.setData("widgetId", serviceId);
+            e.dataTransfer.effectAllowed = "move";
+        };
+
+        const handleDragOver = (e: React.DragEvent) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+        };
+
+        const handleDrop = (e: React.DragEvent, slotIndex: number) => {
+            e.preventDefault();
+            const widgetId = e.dataTransfer.getData("widgetId");
+            if (!widgetId) return;
+
+            const newSlots = [...currentSlots];
+
+            // Remove from old position if it exists in the grid (move behavior)
+            const existingIndex = newSlots.indexOf(widgetId);
+            if (existingIndex !== -1) {
+                newSlots[existingIndex] = null;
+            }
+
+            newSlots[slotIndex] = widgetId;
+
+            const saveString = newSlots.map(s => s || '').join(',');
+            handleInputChange('layout_order', saveString);
+        };
+
+        const handleRemoveWidget = (slotIndex: number) => {
+            const newSlots = [...currentSlots];
+            newSlots[slotIndex] = null;
+            const saveString = newSlots.map(s => s || '').join(',');
+            handleInputChange('layout_order', saveString);
+        };
+
+        return (
+            <div className="animate-in fade-in slide-in-from-bottom-4">
+                <div className="mb-8 border-b border-stone-200 pb-6 text-center">
+                    <h1 className="text-4xl font-bold text-black">Display Layout</h1>
+                    <p className="text-black mt-2 text-xl font-medium">Drag widgets onto the preview to configure.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* SIDEBAR */}
+                    <div className="lg:col-span-1 space-y-6">
+                        {/* Config */}
+                        <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-6">
+                            <h2 className="text-xs font-bold uppercase tracking-widest text-black mb-4 flex items-center gap-2">
+                                <Settings size={14} /> Configuration
+                            </h2>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-[10px] uppercase font-bold text-stone-500 mb-2">Layout Mode</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {[
+                                            { id: 'quadrants', label: 'Quadrants' },
+                                            { id: 'halves', label: 'Halves' },
+                                            { id: 'thirds', label: 'Thirds' },
+                                            { id: 'focus', label: 'Focus' }
+                                        ].map((style) => (
+                                            <button
+                                                key={style.id}
+                                                onClick={() => handleInputChange('layout_style', style.id)}
+                                                className={`px-3 py-2 rounded text-xs font-bold border transition-all ${currentStyle === style.id
+                                                    ? 'bg-stone-900 text-white border-stone-900'
+                                                    : 'bg-white text-black border-stone-200 hover:bg-stone-50'
+                                                    }`}
+                                            >
+                                                {style.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-stone-100">
+                                    <div>
+                                        <label className="block text-[10px] uppercase font-bold text-stone-500 mb-1">Width</label>
+                                        <input
+                                            type="number"
+                                            value={dispW}
+                                            onChange={(e) => handleInputChange('display_width', e.target.value)}
+                                            className="w-full bg-stone-50 border border-stone-200 rounded p-1.5 text-xs font-mono"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] uppercase font-bold text-stone-500 mb-1">Height</label>
+                                        <input
+                                            type="number"
+                                            value={dispH}
+                                            onChange={(e) => handleInputChange('display_height', e.target.value)}
+                                            className="w-full bg-stone-50 border border-stone-200 rounded p-1.5 text-xs font-mono"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Widget Pool */}
+                        <div className="bg-white rounded-lg border border-stone-200 shadow-sm p-6">
+                            <h2 className="text-xs font-bold uppercase tracking-widest text-black mb-4 flex items-center gap-2">
+                                <LayoutIcon size={14} /> Available Widgets
+                            </h2>
+
+                            {availableWidgets.length === 0 ? (
+                                <div className="text-center py-8 border-2 border-dashed border-stone-100 rounded bg-stone-50">
+                                    <p className="text-xs text-stone-400 italic">All active widgets placed.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2">
+                                    {availableWidgets.map(service => {
+                                        const Icon = service.icon;
+                                        return (
+                                            <div
+                                                key={service.id}
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, service.id)}
+                                                className="flex items-center gap-3 p-3 bg-white border border-stone-200 rounded-md shadow-sm cursor-grab active:cursor-grabbing hover:border-stone-400 transition-all"
+                                            >
+                                                <div className="p-1.5 bg-stone-50 rounded text-black">
+                                                    <Icon size={16} />
+                                                </div>
+                                                <span className="text-sm font-bold">{service.name}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            <p className="text-[10px] text-stone-400 mt-4 text-center">
+                                Drag widgets from here to the preview on the right.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* PREVIEW */}
+                    <div className="lg:col-span-2">
+                        <div className="bg-stone-100 rounded-xl border border-stone-200 p-8 flex flex-col items-center justify-center min-h-[600px] overflow-hidden">
+                            <div
+                                className="relative bg-white border-8 border-stone-800 rounded-lg shadow-2xl overflow-hidden flex flex-col transition-all duration-500 shrink-0"
+                                style={{
+                                    width: '100%',
+                                    maxWidth: dispW > dispH ? '600px' : '400px',
+                                    maxHeight: '500px',
+                                    aspectRatio: `${dispW}/${dispH}`
+                                }}
+                            >
+                                <div className="bg-stone-800 h-4 w-full shrink-0"></div>
+                                <div className="flex-1 p-4 bg-[#f5f5f5] text-black font-mono relative overflow-hidden flex flex-col">
+                                    <div className="absolute top-2 right-2 text-[10px] text-stone-400 z-10">E-INK PREVIEW ({dispW}x{dispH})</div>
+
+                                    <div className={`flex-1 gap-2 mt-6 grid ${gridClass} min-h-0`}>
+                                        {currentSlots.map((serviceId, i) => {
+                                            const service = serviceId ? AVAILABLE_SERVICES.find(s => s.id === serviceId) : null;
+
+                                            let slotClass = "relative border-2 border-dashed border-stone-300 rounded flex flex-col items-center justify-center transition-all hover:bg-stone-100 overflow-hidden";
+                                            if (currentStyle === 'focus') {
+                                                if (i === 0) slotClass += " col-span-3 row-span-2";
+                                                else slotClass += " col-span-1 row-span-1";
+                                            }
+
+                                            if (service) {
+                                                slotClass = slotClass.replace('border-dashed border-stone-300', 'border-solid border-black bg-white shadow-sm');
+                                            }
+
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    onDragOver={handleDragOver}
+                                                    onDrop={(e) => handleDrop(e, i)}
+                                                    className={slotClass}
+                                                >
+                                                    {service ? (
+                                                        <>
+                                                            <div className="flex flex-col items-center text-center p-2 w-full h-full justify-center">
+                                                                <service.icon size={currentStyle === 'focus' && i === 0 ? 32 : 20} className="mb-2" />
+                                                                <span className={`font-bold uppercase tracking-wider truncate w-full ${currentStyle === 'focus' && i === 0 ? 'text-xl' : 'text-[10px]'}`}>
+                                                                    {service.name}
+                                                                </span>
+                                                                <div className="space-y-1 opacity-30 mt-2 w-1/2 flex flex-col items-center">
+                                                                    <div className="h-1 w-full bg-black"></div>
+                                                                    <div className="h-1 w-2/3 bg-black"></div>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleRemoveWidget(i)}
+                                                                className="absolute top-1 right-1 p-1 bg-stone-100 hover:bg-red-100 text-stone-400 hover:text-red-500 rounded-full transition-colors"
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <div className="text-stone-300 flex flex-col items-center pointer-events-none">
+                                                            <Plus size={24} />
+                                                            <span className="text-[10px] font-bold uppercase mt-1">Drop Here</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="bg-stone-800 h-8 w-full flex items-center justify-center shrink-0">
+                                    <div className="w-12 h-1 bg-stone-700 rounded-full"></div>
+                                </div>
+                            </div>
+                            <p className="text-center text-xs text-stone-400 mt-6">Preview is an approximation. Actual rendering depends on device firmware.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // --- MAIN RENDER ---
 
     if (loading) return <div className="h-screen bg-white flex items-center justify-center text-stone-400 italic" style={{ fontFamily: '"Segoe UI", sans-serif' }}>Loading InkBridge...</div>;
@@ -1676,6 +1944,9 @@ void loop() {
                             <NavButton active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} icon={Home} label="Dashboard" />
                             <NavButton active={currentView === 'integrations'} onClick={() => setCurrentView('integrations')} icon={Sliders} label="Integrations" />
                             <NavButton active={currentView === 'setup'} onClick={() => setCurrentView('setup')} icon={Smartphone} label="Setup" />
+                            {developerMode && (
+                                <NavButton active={currentView === 'layout'} onClick={() => setCurrentView('layout')} icon={LayoutIcon} label="Layout" />
+                            )}
                         </div>
                     )}
 
@@ -1701,6 +1972,9 @@ void loop() {
                         <NavButton active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} icon={Home} label="Dash" />
                         <NavButton active={currentView === 'integrations'} onClick={() => setCurrentView('integrations')} icon={Sliders} label="Integrations" />
                         <NavButton active={currentView === 'setup'} onClick={() => setCurrentView('setup')} icon={Smartphone} label="Setup" />
+                        {developerMode && (
+                            <NavButton active={currentView === 'layout'} onClick={() => setCurrentView('layout')} icon={LayoutIcon} label="Layout" />
+                        )}
                     </div>
                 )}
             </header>
@@ -1719,6 +1993,7 @@ void loop() {
                         {currentView === 'dashboard' && renderDashboardPage()}
                         {currentView === 'setup' && renderSetupPage()}
                         {currentView === 'integrations' && renderIntegrationsPage()}
+                        {currentView === 'layout' && renderLayoutPage()}
                     </>
                 )}
             </main>

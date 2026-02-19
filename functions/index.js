@@ -1190,4 +1190,34 @@ app.post("/crypto/array", async (req, res) => {
     }
 });
 
+// --- ROUTE: DISPLAY ---
+app.get('/display/background', async (req, res) => {
+    // TODO: Implement logic to return the static background image
+    res.status(200).send('Background image');
+});
+
+app.get('/display/data', async (req, res) => {
+    // TODO: Implement logic to return the lightweight JSON payload
+    res.json({
+        "status": "success",
+        "data": {
+            "time": new Date().toLocaleTimeString(),
+            "date": new Date().toLocaleDateString(),
+            "weather": {
+                "temperature": 72,
+                "condition": "Sunny"
+            }
+        }
+    });
+});
+
+app.get('/display/full', async (req, res) => {
+    // TODO: Implement logic to return the complete image buffer
+    // 1. Fetch background image
+    // 2. Fetch real-time data
+    // 3. Use sharp or canvas to composite the data on top of the background
+    // 4. Send the final image as a buffer
+    res.status(200).send('Full display image');
+});
+
 exports.api = functions.https.onRequest(app);
