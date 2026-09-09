@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spotify Authentication - InkBridge</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #121212;
+      color: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      text-align: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .card {
+      background-color: #181818;
+      border: 1px solid #282828;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .icon {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+      color: #1DB954;
+    }
+    h2 {
+      margin: 0 0 8px 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    p {
+      margin: 0 0 20px 0;
+      font-size: 14px;
+      color: #B3B3B3;
+      line-height: 1.5;
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(29, 185, 84, 0.2);
+      border-top-color: #1DB954;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px auto;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    button {
+      background-color: #1DB954;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 500px;
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #1ed760;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner" id="spinner"></div>
+    <h2 id="title">Authenticating Spotify...</h2>
+    <p id="message">Please wait while we complete your connection to InkBridge.</p>
+    <button id="closeBtn" style="display: none;" onclick="window.close()">Close Window</button>
+  </div>
+
+  <script>
+    (function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      
+      const code = urlParams.get('code') || hashParams.get('code');
+      const state = urlParams.get('state') || hashParams.get('state');
+      const error = urlParams.get('error') || hashParams.get('error');
+      const accessToken = hashParams.get('access_token');
+      const expiresIn = hashParams.get('expires_in');
+
+      const titleEl = document.getElementById('title');
+      const msgEl = document.getElementById('message');
+      const spinnerEl = document.getElementById('spinner');
+      const closeBtn = document.getElementById('closeBtn');
+
+      if (error) {
+        spinnerEl.style.display = 'none';
+        titleEl.textContent = 'Connection Failed';
+        titleEl.style.color = '#e22134';
+        msgEl.textContent = 'Spotify error: ' + error;
+        closeBtn.style.display = 'inline-block';
+        if (window.opener) {
+          window.opener.postMessage({ type: 'SPOTIFY_AUTH_ERROR', error: error }, '*');
+        }
+        return;
+      }
+
+      // Successful redirect
+      titleEl.textContent = 'Spotify Connected!';
+      titleEl.style.color = '#1DB954';
+      msgEl.textContent = 'Closing this window and returning to InkBridge...';
+
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'SPOTIFY_AUTH_SUCCESS',
+          code: code,
+          state: state,
+          accessToken: accessToken,
+          expiresIn: expiresIn
+        }, '*');
+        
+        // Auto close after brief delay
+        setTimeout(function() {
+          window.close();
+        }, 800);
+      } else {
+        msgEl.textContent = 'Connection successful! You can now close this window or return to the app.';
+        closeBtn.style.display = 'inline-block';
+      }
+    })();
+  </script>
+</body>
+</html>

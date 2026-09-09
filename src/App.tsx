@@ -1,19 +1,28 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
     getFirestore, doc, setDoc, getDoc, collection, query, getDocs, onSnapshot, where
 } from 'firebase/firestore';
 import {
-    getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, type User
+    getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInAnonymously, type User
 } from 'firebase/auth';
 import {
     Wifi, Key, Cloud, TrendingUp, Calendar, BookOpen,
     Check, Copy, Eye, EyeOff, User as UserIcon, Server, RefreshCw, Music, Moon, Clock, Bitcoin,
-    Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown, Github, LifeBuoy,
+    Plus, X, Trash2, Home, Activity, Sliders, Smartphone, Cpu, LayoutDashboard, Settings, MapPin, Newspaper, ChevronDown, Github, LifeBuoy, AlertCircle, ExternalLink, ShieldAlert,
     type LucideIcon
 } from 'lucide-react';
 
 // --- TYPES ---
+export type AppUser = User | {
+    uid: string;
+    displayName?: string | null;
+    email?: string | null;
+    photoURL?: string | null;
+    isAnonymous?: boolean;
+    [key: string]: any;
+};
+
 interface Service {
     id: string;
     name: string;
@@ -47,6 +56,11 @@ interface IntegrationState {
     canvas_domain: string;
     canvas_token: string;
     spotify_enabled: boolean;
+    spotify_client_id?: string;
+    spotify_client_secret?: string;
+    spotify_access_token?: string;
+    spotify_refresh_token?: string;
+    spotify_token_expiry?: number | string;
     travel_enabled: boolean;
     travel_origin: string;
     travel_destination: string;
@@ -55,7 +69,7 @@ interface IntegrationState {
     news_enabled: boolean;
     news_category: string;
     news_api_key: string;
-    [key: string]: string | boolean; // Index signature for dynamic access
+    [key: string]: any; // Dynamic access
 }
 
 interface ActiveIntegrationCardProps {
@@ -67,12 +81,12 @@ interface ActiveIntegrationCardProps {
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
-    apiKey: "AIzaSyBPpGfOASHF3vFz2p_aUeF-HFun_curbJo",
-    authDomain: "inkbase01.firebaseapp.com",
-    projectId: "inkbase01",
-    storageBucket: "inkbase01.firebasestorage.app",
-    messagingSenderId: "477027384144",
-    appId: "1:477027384144:web:18bfffe2d3e2b4685eca55"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBPpGfOASHF3vFz2p_aUeF-HFun_curbJo",
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "inkbase01.firebaseapp.com",
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "inkbase01",
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "inkbase01.firebasestorage.app",
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "477027384144",
+    appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:477027384144:web:18bfffe2d3e2b4685eca55"
 };
 
 // Initialize Firebase
@@ -121,6 +135,11 @@ const INITIAL_INTEGRATIONS: IntegrationState = {
     canvas_domain: "",
     canvas_token: "",
     spotify_enabled: false,
+    spotify_client_id: "",
+    spotify_client_secret: "",
+    spotify_access_token: "",
+    spotify_refresh_token: "",
+    spotify_token_expiry: 0,
     travel_enabled: false,
     travel_origin: "",
     travel_destination: "",
@@ -321,8 +340,16 @@ const ActiveIntegrationCard = ({ serviceId, onRemove, isEnabled, children }: Act
 // --- MAIN COMPONENT ---
 export default function InkBridge() {
     // Auth State
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<AppUser | null>(null);
     const [loading, setLoading] = useState(true);
+    const [loggingIn, setLoggingIn] = useState(false);
+    const [authError, setAuthError] = useState<{
+        code: string;
+        message: string;
+        domain?: string;
+    } | null>(null);
+    const [showAuthHelpModal, setShowAuthHelpModal] = useState(false);
+    const [copiedDomain, setCopiedDomain] = useState(false);
 
     // Navigation State
     const [currentView, setCurrentView] = useState<'dashboard' | 'integrations' | 'setup'>('dashboard');
@@ -350,6 +377,51 @@ export default function InkBridge() {
     // Spotify Playback State
     const [spotifyPlayback, setSpotifyPlayback] = useState<any>(null);
     const [loadingSpotify, setLoadingSpotify] = useState(false);
+    const [refreshingSpotify, setRefreshingSpotify] = useState(false);
+    const [connectingSpotify, setConnectingSpotify] = useState(false);
+    const [spotifyStatus, setSpotifyStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+    const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
+        return () => clearInterval(timer);
+    }, []);
+
+    // Spotify Popup Message Listener
+    useEffect(() => {
+        const handleMessage = async (event: MessageEvent) => {
+            if (!event.data || typeof event.data !== 'object') return;
+            if (event.data.type === 'SPOTIFY_AUTH_SUCCESS') {
+                console.log("Received SPOTIFY_AUTH_SUCCESS from popup:", event.data);
+                setConnectingSpotify(false);
+                setSpotifyStatus({ type: 'success', message: 'Spotify connected successfully!' });
+                setTimeout(() => setSpotifyStatus(null), 4000);
+
+                const targetDevId = event.data.deviceId || activeDeviceId || (userDevices.length > 0 ? userDevices[0] : "integrations");
+                if (user) {
+                    try {
+                        const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", targetDevId);
+                        const snap = await getDoc(settingsRef);
+                        if (snap.exists()) {
+                            const data = snap.data();
+                            setIntegrations(prev => ({ ...prev, ...data }));
+                        }
+                    } catch (e) {
+                        console.error("Error reading updated settings from Firestore:", e);
+                    }
+                }
+            } else if (event.data.type === 'SPOTIFY_AUTH_ERROR') {
+                setConnectingSpotify(false);
+                setSpotifyStatus({
+                    type: 'error',
+                    message: 'Spotify authorization failed: ' + (event.data.error || 'Access Denied')
+                });
+            }
+        };
+
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+    }, [user, activeDeviceId, userDevices]);
 
     // Calendar State
     const [calendarEvents, setCalendarEvents] = useState<any[] | null>(null);
@@ -395,10 +467,6 @@ export default function InkBridge() {
     useEffect(() => {
         if (!activeDeviceId || !user) return;
 
-        // Reset status when switching devices
-        setDeviceStatus('linked');
-        setLastSync(null);
-
         const deviceRef = doc(db, "artifacts", appId, "devices", activeDeviceId);
 
         // Subscribe to real-time updates
@@ -415,8 +483,14 @@ export default function InkBridge() {
                     setDeviceStatus(isOnline ? 'online' : 'linked');
                 } else {
                     setDeviceStatus('linked');
+                    setLastSync(null);
                 }
+            } else {
+                setDeviceStatus('linked');
+                setLastSync(null);
             }
+        }, (err) => {
+            console.warn("Device snapshot note:", err);
         });
 
         return () => unsubscribe();
@@ -441,69 +515,204 @@ export default function InkBridge() {
     }, []);
 
     // --- AUTH & LOAD ---
-    useEffect(() => {
-        const loadUserData = async (uid: string) => {
-            try {
-                // 1. Get/Generate InkBridge Secret Key
-                const userDocRef = doc(db, "artifacts", appId, "users", uid);
-                const userSnap = await getDoc(userDocRef);
+    const loadUserData = useCallback(async (uid: string) => {
+        try {
+            // 1. Get/Generate InkBridge Secret Key
+            const userDocRef = doc(db, "artifacts", appId, "users", uid);
+            const userSnap = await getDoc(userDocRef);
 
-                if (userSnap.exists()) {
-                    const data = userSnap.data();
-                    if (data.apiKey) setUserApiKey(data.apiKey);
-                } else {
-                    const newKey = "sk_" + Math.random().toString(36).substr(2, 9) + Math.random().toString(36).substr(2, 9);
-                    await setDoc(userDocRef, { apiKey: newKey }, { merge: true });
-                    setUserApiKey(newKey);
-                }
-
-                // 2. Check for linked devices
-                const devicesRef = collection(db, "artifacts", appId, "devices");
-                const qDevice = query(devicesRef, where("ownerId", "==", uid));
-                const deviceSnapshot = await getDocs(qDevice);
-
-                if (!deviceSnapshot.empty) {
-                    const devices = deviceSnapshot.docs.map(doc => doc.id);
-                    setUserDevices(devices);
-                    setActiveDeviceId(devices[0]);
-                }
-            } catch (e) {
-                console.error("Load Error", e);
+            if (userSnap.exists()) {
+                const data = userSnap.data();
+                if (data.apiKey) setUserApiKey(data.apiKey);
+            } else {
+                const newKey = "sk_" + Math.random().toString(36).substr(2, 9) + Math.random().toString(36).substr(2, 9);
+                await setDoc(userDocRef, { apiKey: newKey }, { merge: true });
+                setUserApiKey(newKey);
             }
-        };
 
+            // 2. Check for linked devices
+            const devicesRef = collection(db, "artifacts", appId, "devices");
+            const qDevice = query(devicesRef, where("ownerId", "==", uid));
+            const deviceSnapshot = await getDocs(qDevice);
+
+            if (!deviceSnapshot.empty) {
+                const devices = deviceSnapshot.docs.map(doc => doc.id);
+                setUserDevices(devices);
+                setActiveDeviceId(devices[0]);
+            }
+        } catch (e) {
+            console.warn("Load error from Firestore (using local fallback if available):", e);
+            const localKey = localStorage.getItem(`inkbridge_key_${uid}`) || ("sk_" + Math.random().toString(36).substr(2, 9) + Math.random().toString(36).substr(2, 9));
+            localStorage.setItem(`inkbridge_key_${uid}`, localKey);
+            setUserApiKey(prev => prev || localKey);
+
+            const cachedDevices = localStorage.getItem(`inkbridge_devices_${uid}`);
+            if (cachedDevices) {
+                try {
+                    const parsed = JSON.parse(cachedDevices);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        setUserDevices(parsed);
+                        setActiveDeviceId(prev => prev || parsed[0]);
+                    }
+                } catch {
+                    // Ignore cache parse error
+                }
+            }
+        }
+    }, []);
+
+    useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            setUser(currentUser);
             if (currentUser) {
+                setUser(currentUser);
                 await loadUserData(currentUser.uid);
+            } else {
+                // Check if local guest session was active
+                const guestUid = localStorage.getItem("inkbridge_guest_uid");
+                if (guestUid) {
+                    const guestUser: AppUser = {
+                        uid: guestUid,
+                        displayName: "Guest User",
+                        email: null,
+                        photoURL: null,
+                        isAnonymous: true
+                    };
+                    setUser(guestUser);
+                    await loadUserData(guestUid);
+                } else {
+                    setUser(null);
+                }
             }
             setLoading(false);
         });
         return () => unsubscribe();
-    }, []);
+    }, [loadUserData]);
 
     // NEW: Load Settings when Device Changes
     useEffect(() => {
         if (!user || !activeDeviceId) return;
 
         const loadDeviceSettings = async () => {
-            const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", activeDeviceId);
-            const settingsSnap = await getDoc(settingsRef);
+            try {
+                const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", activeDeviceId);
+                const settingsSnap = await getDoc(settingsRef);
 
-            if (settingsSnap.exists()) {
-                setIntegrations((prev) => ({ ...prev, ...settingsSnap.data() }));
-            } else {
-                setIntegrations(INITIAL_INTEGRATIONS);
+                if (settingsSnap.exists()) {
+                    setIntegrations((prev) => ({ ...prev, ...settingsSnap.data() }));
+                    return;
+                }
+            } catch (err) {
+                console.warn("Firestore settings load note:", err);
             }
+
+            // Fallback to local storage cache
+            try {
+                const cached = localStorage.getItem(`inkbridge_settings_${user.uid}_${activeDeviceId}`);
+                if (cached) {
+                    setIntegrations(JSON.parse(cached));
+                    return;
+                }
+            } catch {
+                // Ignore local storage parse error
+            }
+
+            setIntegrations(INITIAL_INTEGRATIONS);
         };
         loadDeviceSettings();
     }, [activeDeviceId, user]);
 
     // --- ACTIONS ---
-    const handleLogin = async () => { await signInWithPopup(auth, new GoogleAuthProvider()); };
-    const handleLogout = async () => { await signOut(auth); setUser(null); };
+    const handleLogin = async () => {
+        setAuthError(null);
+        setLoggingIn(true);
+        try {
+            const provider = new GoogleAuthProvider();
+            provider.setCustomParameters({ prompt: 'select_account' });
+            await signInWithPopup(auth, provider);
+            setShowAuthHelpModal(false);
+        } catch (err: any) {
+            console.error("Firebase Sign-In Error:", err);
+            const errCode = err?.code || "";
+            const errMsg = err?.message || "";
 
-    const saveIntegrations = async () => {
+            if (errCode === 'auth/unauthorized-domain' || errMsg.includes('unauthorized-domain')) {
+                const currentDomain = window.location.hostname;
+                setAuthError({
+                    code: 'auth/unauthorized-domain',
+                    domain: currentDomain,
+                    message: `Domain '${currentDomain}' is not authorized in Firebase Authentication.`
+                });
+                setShowAuthHelpModal(true);
+            } else if (errCode === 'auth/popup-blocked') {
+                setAuthError({
+                    code: 'auth/popup-blocked',
+                    message: 'The sign-in popup was blocked by your browser. Please allow popups for this site and try again.'
+                });
+            } else if (errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request') {
+                // User closed popup without signing in
+                setAuthError(null);
+            } else {
+                setAuthError({
+                    code: errCode || 'auth/error',
+                    message: errMsg || 'An error occurred while signing in with Google.'
+                });
+            }
+        } finally {
+            setLoggingIn(false);
+        }
+    };
+
+    const handleGuestLogin = async () => {
+        setAuthError(null);
+        setLoggingIn(true);
+        try {
+            // First attempt native Firebase anonymous sign-in if enabled
+            const cred = await signInAnonymously(auth);
+            if (cred?.user) {
+                setUser(cred.user);
+                await loadUserData(cred.user.uid);
+                setShowAuthHelpModal(false);
+                return;
+            }
+        } catch (err) {
+            console.warn("Firebase signInAnonymously unavailable, using local guest session:", err);
+        }
+
+        // Fallback: Local persistent guest user
+        try {
+            let guestId = localStorage.getItem("inkbridge_guest_uid");
+            if (!guestId) {
+                guestId = "guest_" + Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
+                localStorage.setItem("inkbridge_guest_uid", guestId);
+            }
+            const guestUser: AppUser = {
+                uid: guestId,
+                displayName: "Guest User",
+                email: null,
+                photoURL: null,
+                isAnonymous: true
+            };
+            setUser(guestUser);
+            await loadUserData(guestId);
+            setShowAuthHelpModal(false);
+        } catch (guestErr) {
+            console.error("Guest login initialization error:", guestErr);
+        } finally {
+            setLoggingIn(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+        } catch {
+            // Ignore signout error
+        }
+        localStorage.removeItem("inkbridge_guest_uid");
+        setUser(null);
+    };
+
+    const saveIntegrations = useCallback(async () => {
         if (!user || !activeDeviceId) return;
         setSaveState('saving');
         try {
@@ -512,10 +721,16 @@ export default function InkBridge() {
             setSaveState('saved');
             setTimeout(() => setSaveState('idle'), 2000);
         } catch (e) {
-            console.error(e);
-            setSaveState('idle');
+            console.warn("Firestore save note (saving locally as fallback):", e);
+            try {
+                localStorage.setItem(`inkbridge_settings_${user.uid}_${activeDeviceId}`, JSON.stringify(integrations));
+                setSaveState('saved');
+                setTimeout(() => setSaveState('idle'), 2000);
+            } catch {
+                setSaveState('idle');
+            }
         }
-    };
+    }, [activeDeviceId, integrations, user]);
 
     // Auto-save Effect
     useEffect(() => {
@@ -528,7 +743,7 @@ export default function InkBridge() {
 
         const timeoutId = setTimeout(() => saveIntegrations(), 1000);
         return () => clearTimeout(timeoutId);
-    }, [integrations, loading, user]);
+    }, [saveIntegrations, loading, user]);
 
     const registerDevice = async () => {
         if (!user || !deviceIdInput) return;
@@ -562,33 +777,267 @@ export default function InkBridge() {
             setLastSync(timestamp);
             setLinkStatus(`Success! Device ${cleanId} linked.`);
             setDeviceIdInput("");
-        } catch (e) {
-            setLinkStatus("Error linking device.");
+        } catch (err) {
+            console.warn("Firestore device link error (storing locally):", err);
+            const timestamp = Date.now();
+            setActiveDeviceId(cleanId);
+            setUserDevices(prev => {
+                const next = prev.includes(cleanId) ? prev : [...prev, cleanId];
+                localStorage.setItem(`inkbridge_devices_${user.uid}`, JSON.stringify(next));
+                return next;
+            });
+            setLastSync(timestamp);
+            setLinkStatus(`Device ${cleanId} linked.`);
+            setDeviceIdInput("");
         }
     };
 
     const handleSpotifyLogin = () => {
-        if (!user || !activeDeviceId) return;
+        if (!user) {
+            setSpotifyStatus({ type: 'error', message: 'Please sign in with Google first to connect Spotify.' });
+            return;
+        }
+
+        const targetDeviceId = activeDeviceId || (userDevices.length > 0 ? userDevices[0] : "integrations");
+        const clientId = (integrations.spotify_client_id as string) || (import.meta.env.VITE_SPOTIFY_CLIENT_ID as string) || "8872c1c8b9db49fd8c783d24649cce00";
+        const callbackUrl = `${window.location.origin}/spotify-callback.html`;
         const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
-        window.location.href = `${apiUrl}/spotify/login?uid=${user.uid}&device_id=${activeDeviceId}&skip_heartbeat=true&redirect=${encodeURIComponent(window.location.href)}`;
+        const loginUrl = `${apiUrl}/spotify/login?uid=${user.uid}&device_id=${targetDeviceId}&client_id=${clientId}&skip_heartbeat=true&popup=true&redirect=${encodeURIComponent(callbackUrl)}`;
+
+        setConnectingSpotify(true);
+        setSpotifyStatus({ type: 'info', message: 'Opening Spotify authorization window...' });
+
+        const width = 520;
+        const height = 680;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+
+        const popup = window.open(
+            loginUrl,
+            'spotify_oauth_popup',
+            `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
+        );
+
+        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+            setConnectingSpotify(false);
+            setSpotifyStatus({
+                type: 'error',
+                message: 'Popup was blocked by your browser. Please allow popups for this site and click Connect Spotify again.'
+            });
+            return;
+        }
+
+        // Check if tokens were updated in Firestore when popup closes
+        const pollInterval = setInterval(async () => {
+            if (!popup || popup.closed) {
+                clearInterval(pollInterval);
+                setConnectingSpotify(false);
+                try {
+                    const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", targetDeviceId);
+                    const snap = await getDoc(settingsRef);
+                    if (snap.exists() && snap.data().spotify_access_token) {
+                        setIntegrations(prev => ({ ...prev, ...snap.data() }));
+                        setSpotifyStatus({ type: 'success', message: 'Spotify connected successfully!' });
+                        setTimeout(() => setSpotifyStatus(null), 3500);
+                    }
+                } catch (e) {
+                    console.error("Error reading settings after popup closed:", e);
+                }
+            }
+        }, 1000);
+    };
+
+    const refreshSpotifyToken = async (targetDevId?: string): Promise<string | null> => {
+        if (!user) return null;
+        const devId = targetDevId || activeDeviceId || (userDevices.length > 0 ? userDevices[0] : "integrations");
+        const refreshToken = (integrations.spotify_refresh_token as string) || "";
+        if (!refreshToken) {
+            setSpotifyStatus({ type: 'error', message: 'No refresh token available. Please reconnect Spotify.' });
+            return null;
+        }
+
+        setRefreshingSpotify(true);
+        setSpotifyStatus({ type: 'info', message: 'Refreshing Spotify access token...' });
+
+        try {
+            const clientId = (integrations.spotify_client_id as string) || (import.meta.env.VITE_SPOTIFY_CLIENT_ID as string) || "8872c1c8b9db49fd8c783d24649cce00";
+            let refreshed = false;
+            let newAccessToken = "";
+            let expiresIn = 3600;
+            let newRefreshToken = refreshToken;
+
+            // Strategy 1: Direct Spotify Token Endpoint (CORS-enabled)
+            try {
+                const params = new URLSearchParams();
+                params.append('grant_type', 'refresh_token');
+                params.append('refresh_token', refreshToken);
+                params.append('client_id', clientId);
+
+                const directRes = await fetch('https://accounts.spotify.com/api/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params
+                });
+
+                if (directRes.ok) {
+                    const data = await directRes.json();
+                    if (data.access_token) {
+                        newAccessToken = data.access_token;
+                        expiresIn = data.expires_in || 3600;
+                        if (data.refresh_token) newRefreshToken = data.refresh_token;
+                        refreshed = true;
+                    }
+                } else {
+                    const errBody = await directRes.text();
+                    console.warn(`Direct refresh responded with ${directRes.status}:`, errBody);
+                }
+            } catch (directErr) {
+                console.warn("Direct Spotify token refresh network error, attempting backend:", directErr);
+            }
+
+            // Strategy 2: Backend Cloud Function Fallback
+            if (!refreshed) {
+                const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
+                const cfRes = await fetch(`${apiUrl}/spotify/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid: user.uid, device_id: devId })
+                });
+                if (cfRes.ok) {
+                    const cfData = await cfRes.json();
+                    if (cfData.status === 'success' && cfData.access_token) {
+                        newAccessToken = cfData.access_token;
+                        refreshed = true;
+                    }
+                }
+            }
+
+            if (refreshed && newAccessToken) {
+                const expiryTime = Date.now() + (expiresIn * 1000);
+                const updates: any = {
+                    spotify_access_token: newAccessToken,
+                    spotify_token_expiry: expiryTime,
+                    spotify_enabled: true
+                };
+                if (newRefreshToken) updates.spotify_refresh_token = newRefreshToken;
+
+                // Update local state
+                setIntegrations(prev => ({ ...prev, ...updates }));
+
+                // Persist to Firestore
+                const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", devId);
+                await setDoc(settingsRef, updates, { merge: true });
+
+                setSpotifyStatus({ type: 'success', message: 'Spotify token refreshed successfully!' });
+                setTimeout(() => setSpotifyStatus(null), 3000);
+                return newAccessToken;
+            } else {
+                setSpotifyStatus({ type: 'error', message: 'Failed to refresh token. Your session may have expired—please click Reconnect.' });
+                return null;
+            }
+        } catch (err: any) {
+            console.error("Error during Spotify token refresh:", err);
+            setSpotifyStatus({ type: 'error', message: 'Token refresh error: ' + (err.message || 'Unknown') });
+            return null;
+        } finally {
+            setRefreshingSpotify(false);
+        }
+    };
+
+    const handleDisconnectSpotify = async () => {
+        if (!user) return;
+        const devId = activeDeviceId || (userDevices.length > 0 ? userDevices[0] : "integrations");
+        const updates = {
+            spotify_access_token: "",
+            spotify_refresh_token: "",
+            spotify_token_expiry: 0,
+            spotify_enabled: false
+        };
+        setIntegrations(prev => ({ ...prev, ...updates }));
+        setSpotifyPlayback(null);
+        try {
+            const settingsRef = doc(db, "artifacts", appId, "users", user.uid, "settings", devId);
+            await setDoc(settingsRef, updates, { merge: true });
+            setSpotifyStatus({ type: 'info', message: 'Spotify disconnected.' });
+            setTimeout(() => setSpotifyStatus(null), 3000);
+        } catch (e) {
+            console.error("Error disconnecting Spotify:", e);
+        }
     };
 
     const fetchSpotifyPlayback = async () => {
-        if (!user || !activeDeviceId) return;
+        if (!user) {
+            setSpotifyStatus({ type: 'error', message: 'Please sign in to check Spotify playback.' });
+            return;
+        }
+        const devId = activeDeviceId || (userDevices.length > 0 ? userDevices[0] : "integrations");
         setLoadingSpotify(true);
+
         try {
+            let token = (integrations.spotify_access_token as string) || "";
+            const expiry = Number(integrations.spotify_token_expiry) || 0;
+            const refreshToken = (integrations.spotify_refresh_token as string) || "";
+
+            // Proactive refresh if expired or expiring within 2 minutes
+            if ((!token || (expiry > 0 && Date.now() > expiry - 120000)) && refreshToken) {
+                console.log("Spotify access token expired or expiring soon, refreshing before request...");
+                const refreshed = await refreshSpotifyToken(devId);
+                if (refreshed) token = refreshed;
+            }
+
+            if (!token) {
+                setSpotifyStatus({ type: 'error', message: 'Spotify not connected or missing token.' });
+                setSpotifyPlayback(null);
+                return;
+            }
+
+            // Direct Spotify Web API request
+            let res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            // If 401 Unauthorized, refresh token reactively and retry once
+            if (res.status === 401 && refreshToken) {
+                console.log("401 Unauthorized from Spotify, attempting token refresh...");
+                const refreshed = await refreshSpotifyToken(devId);
+                if (refreshed) {
+                    token = refreshed;
+                    res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                }
+            }
+
+            if (res.status === 204) {
+                setSpotifyPlayback({ is_playing: false, item: null });
+                return;
+            }
+
+            if (res.ok) {
+                const data = await res.json();
+                setSpotifyPlayback(data);
+                return;
+            }
+
+            // Fallback to Cloud Function /spotify/request
             const apiUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/api`;
-            const response = await fetch(`${apiUrl}/spotify/request`, {
+            const cfResponse = await fetch(`${apiUrl}/spotify/request`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     uid: user.uid,
-                    device_id: activeDeviceId,
+                    device_id: devId,
                     endpoint: 'me/player/currently-playing',
                     method: 'GET'
                 })
             });
-            const result = await response.json();
+            const result = await cfResponse.json();
             if (result.status === 'success') {
                 setSpotifyPlayback(result.data);
             } else {
@@ -1517,42 +1966,134 @@ void loop() {
                             isEnabled={integrations.spotify_enabled as boolean}
                             onRemove={() => handleRemoveService('spotify')}
                         >
-                            <div className="flex flex-col gap-4 border border-dashed border-stone-200 p-4 rounded-lg bg-stone-50">
-                                <p className="text-xs text-stone-500 italic">Connect your Spotify account to display playback info.</p>
-                                {integrations['spotify_access_token'] ? (
-                                    <div className="space-y-3">
-                                        <button disabled className="self-start bg-emerald-100 text-emerald-700 font-bold py-2 px-6 rounded-full text-xs flex items-center gap-2 shadow-sm border border-emerald-200 cursor-default">
-                                            <Check size={16} /> Spotify Connected
-                                        </button>
+                            {spotifyStatus && (
+                                <div className={`text-xs px-3 py-2 rounded-md mb-3 flex items-center justify-between border ${
+                                    spotifyStatus.type === 'error' ? 'bg-red-50 text-red-700 border-red-200' :
+                                    spotifyStatus.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                                    'bg-stone-100 text-stone-800 border-stone-200'
+                                }`}>
+                                    <div className="flex items-center gap-2">
+                                        {spotifyStatus.type === 'error' && <AlertCircle size={14} className="shrink-0 text-red-500" />}
+                                        {spotifyStatus.type === 'success' && <Check size={14} className="shrink-0 text-emerald-600" />}
+                                        {spotifyStatus.type === 'info' && <RefreshCw size={14} className="shrink-0 animate-spin text-stone-500" />}
+                                        <span>{spotifyStatus.message}</span>
+                                    </div>
+                                    <button onClick={() => setSpotifyStatus(null)} className="text-stone-400 hover:text-stone-700 ml-2 font-bold">✕</button>
+                                </div>
+                            )}
 
-                                        <div className="flex items-center gap-3">
+                            <IntegrationSettings
+                                isConfigured={Boolean(integrations.spotify_access_token)}
+                                actions={
+                                    integrations.spotify_access_token ? (
+                                        <div className="flex flex-wrap items-center gap-2">
                                             <button
                                                 onClick={fetchSpotifyPlayback}
                                                 disabled={loadingSpotify}
-                                                className="bg-stone-900 hover:bg-black text-white px-4 py-2 rounded-md text-xs font-bold transition-colors flex items-center gap-2 shadow-sm"
+                                                className="bg-stone-900 hover:bg-black text-white px-3 py-1.5 rounded-md text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
                                             >
-                                                {loadingSpotify ? <RefreshCw size={14} className="animate-spin" /> : <Music size={14} />}
+                                                {loadingSpotify ? <RefreshCw size={13} className="animate-spin" /> : <Music size={13} />}
                                                 Check Now
                                             </button>
-                                            {spotifyPlayback && (
-                                                <div className="text-xs text-black bg-white border border-stone-200 px-3 py-2 rounded-md shadow-sm">
-                                                    {spotifyPlayback.item ? (
-                                                        <span>
-                                                            <strong>{spotifyPlayback.item.name}</strong> by {spotifyPlayback.item.artists.map((a: any) => a.name).join(', ')}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-stone-500 italic">Nothing playing</span>
-                                                    )}
-                                                </div>
-                                            )}
+                                            <button
+                                                onClick={() => refreshSpotifyToken()}
+                                                disabled={refreshingSpotify}
+                                                className="bg-white hover:bg-stone-100 text-stone-800 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 border border-stone-200 shadow-sm"
+                                                title="Refresh the Spotify access token"
+                                            >
+                                                <RefreshCw size={13} className={refreshingSpotify ? "animate-spin text-stone-900" : "text-stone-500"} />
+                                                {refreshingSpotify ? "Refreshing..." : "Refresh Token"}
+                                            </button>
+                                            <button
+                                                onClick={handleSpotifyLogin}
+                                                disabled={connectingSpotify}
+                                                className="text-stone-500 hover:text-stone-800 px-2 py-1 text-xs underline transition-colors"
+                                            >
+                                                Reconnect
+                                            </button>
+                                            <button
+                                                onClick={handleDisconnectSpotify}
+                                                className="text-red-500 hover:text-red-700 px-2 py-1 text-xs underline transition-colors"
+                                            >
+                                                Disconnect
+                                            </button>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <button onClick={handleSpotifyLogin} className="self-start bg-[#1DB954] hover:bg-[#1ed760] text-white font-bold py-2 px-6 rounded-full text-xs transition-colors flex items-center gap-2 shadow-sm">
-                                        <Music size={16} /> Connect Spotify
-                                    </button>
-                                )}
-                            </div>
+                                    ) : (
+                                        <div className="flex flex-col gap-2">
+                                            <button
+                                                onClick={handleSpotifyLogin}
+                                                disabled={connectingSpotify}
+                                                className="self-start bg-[#1DB954] hover:bg-[#1ed760] text-white font-bold py-2 px-5 rounded-full text-xs transition-colors flex items-center gap-2 shadow-sm disabled:opacity-60"
+                                            >
+                                                {connectingSpotify ? <RefreshCw size={15} className="animate-spin" /> : <Music size={15} />}
+                                                {connectingSpotify ? "Connecting..." : "Connect Spotify"}
+                                            </button>
+                                            <p className="text-[11px] text-stone-500 italic">Opens Spotify authorization in a popup window.</p>
+                                        </div>
+                                    )
+                                }
+                                results={
+                                    spotifyPlayback && (
+                                        <div className="text-xs text-black bg-stone-50 border border-stone-200 p-3 rounded-md shadow-inner flex items-center gap-3">
+                                            {spotifyPlayback.item?.album?.images?.[0]?.url && (
+                                                <img
+                                                    src={spotifyPlayback.item.album.images[0].url}
+                                                    alt="Album art"
+                                                    className="w-12 h-12 rounded object-cover border border-stone-200 shrink-0"
+                                                    referrerPolicy="no-referrer"
+                                                />
+                                            )}
+                                            <div className="min-w-0 flex-1">
+                                                {spotifyPlayback.item ? (
+                                                    <div>
+                                                        <div className="font-bold text-stone-900 leading-tight truncate">{spotifyPlayback.item.name}</div>
+                                                        <div className="text-stone-600 text-[11px] truncate">{spotifyPlayback.item.artists?.map((a: any) => a.name).join(', ')}</div>
+                                                        {spotifyPlayback.item.album?.name && (
+                                                            <div className="text-stone-400 text-[10px] italic truncate">{spotifyPlayback.item.album.name}</div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-stone-500 italic">No track currently playing (Player idle)</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )
+                                }
+                            >
+                                <div className="space-y-4">
+                                    {integrations.spotify_access_token ? (
+                                        <div className="bg-emerald-50 border border-emerald-200 rounded-md p-3">
+                                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                                                <Check size={14} className="text-emerald-600" />
+                                                Spotify Account Linked
+                                            </div>
+                                            {integrations.spotify_token_expiry ? (
+                                                <div className="text-[11px] text-emerald-700 mt-1">
+                                                    {Number(integrations.spotify_token_expiry) > currentTime
+                                                        ? `Token expires in ~${Math.max(1, Math.round((Number(integrations.spotify_token_expiry) - currentTime) / 60000))} minutes`
+                                                        : `Token expired — will automatically refresh when requested or click 'Refresh Token'.`}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
+
+                                    <CollapsibleApiKeyInput
+                                        label="Spotify Client ID (Optional)"
+                                        value={(integrations.spotify_client_id as string) || ""}
+                                        field="spotify_client_id"
+                                        onChange={handleInputChange}
+                                        placeholder="Default: 8872c1c8b9db49fd8c783d24649cce00"
+                                        subtext="Leave empty to use InkBridge default Spotify application."
+                                    />
+                                    <CollapsibleApiKeyInput
+                                        label="Spotify Client Secret (Optional)"
+                                        value={(integrations.spotify_client_secret as string) || ""}
+                                        field="spotify_client_secret"
+                                        onChange={handleInputChange}
+                                        placeholder="Optional for custom developer apps"
+                                    />
+                                </div>
+                            </IntegrationSettings>
                         </ActiveIntegrationCard>
                     )}
 
@@ -1655,6 +2196,94 @@ void loop() {
         );
     };
 
+    const renderAuthHelpModal = () => {
+        if (!showAuthHelpModal) return null;
+        const currentDomain = window.location.hostname;
+        const firebaseConsoleUrl = `https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`;
+
+        const copyDomain = () => {
+            navigator.clipboard.writeText(currentDomain);
+            setCopiedDomain(true);
+            setTimeout(() => setCopiedDomain(false), 2500);
+        };
+
+        return (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl border border-stone-200 overflow-hidden relative">
+                    <div className="p-6 border-b border-stone-100 flex items-start justify-between bg-stone-50/50">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-amber-100 text-amber-800">
+                                <ShieldAlert size={22} />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold text-stone-900">Domain Authorization Required</h2>
+                                <p className="text-xs text-stone-500">Firebase Authentication (Google Sign-In)</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setShowAuthHelpModal(false)}
+                            className="text-stone-400 hover:text-stone-700 p-1.5 rounded-full hover:bg-stone-100 transition-colors"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
+
+                    <div className="p-6 space-y-4 text-xs text-stone-700">
+                        <p className="leading-relaxed">
+                            Google Sign-In is blocked by Firebase because this web domain has not yet been whitelisted in your Firebase project's <strong>Authorized Domains</strong> (<code className="text-amber-800 bg-amber-50 px-1 py-0.5 rounded font-mono">auth/unauthorized-domain</code>).
+                        </p>
+
+                        <div className="bg-stone-50 border border-stone-200 rounded-lg p-3.5 space-y-2">
+                            <div className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">Your Current Domain</div>
+                            <div className="flex items-center gap-2">
+                                <code className="flex-1 bg-white border border-stone-200 rounded px-2.5 py-2 font-mono text-xs text-stone-900 select-all break-all">
+                                    {currentDomain}
+                                </code>
+                                <button
+                                    onClick={copyDomain}
+                                    className="px-3 py-2 bg-white border border-stone-200 hover:bg-stone-100 text-stone-800 rounded font-semibold flex items-center gap-1.5 shadow-sm shrink-0 transition-colors"
+                                >
+                                    {copiedDomain ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                                    {copiedDomain ? "Copied" : "Copy"}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 bg-stone-50/60 p-3.5 rounded-lg border border-stone-200">
+                            <div className="font-bold text-stone-900 text-xs">How to Authorize in Firebase Console:</div>
+                            <ol className="list-decimal list-inside space-y-1.5 text-stone-600 text-[11px] leading-relaxed">
+                                <li>
+                                    Open <a href={firebaseConsoleUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-semibold inline-flex items-center gap-0.5">Firebase Console Settings <ExternalLink size={11} /></a>
+                                </li>
+                                <li>Scroll to <strong>Authorized domains</strong> and click <strong>Add domain</strong></li>
+                                <li>Paste <code className="font-mono text-[10px] bg-stone-200 px-1 py-0.5 rounded text-stone-800">{currentDomain}</code> and save</li>
+                                <li>Return here and click <strong>Retry Google Sign-In</strong> below</li>
+                            </ol>
+                        </div>
+
+                        <div className="pt-2 flex flex-col sm:flex-row gap-2.5 justify-end">
+                            <button
+                                onClick={handleGuestLogin}
+                                disabled={loggingIn}
+                                className="w-full sm:w-auto px-4 py-2.5 bg-stone-900 hover:bg-black text-white rounded-lg font-bold transition-colors flex items-center justify-center gap-2 text-xs shadow"
+                            >
+                                <UserIcon size={14} /> Continue as Guest (Instant Access)
+                            </button>
+                            <button
+                                onClick={handleLogin}
+                                disabled={loggingIn}
+                                className="w-full sm:w-auto px-4 py-2.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 text-xs shadow-sm"
+                            >
+                                {loggingIn ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                                Retry Google Sign-In
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // --- MAIN RENDER ---
 
     if (loading) return <div className="h-screen bg-white flex items-center justify-center text-stone-400 italic" style={{ fontFamily: '"Segoe UI", sans-serif' }}>Loading InkBridge...</div>;
@@ -1662,6 +2291,7 @@ void loop() {
     return (
         <div className="min-h-screen bg-white text-black selection:bg-stone-200 selection:text-black" style={{ fontFamily: '"Segoe UI", sans-serif' }}>
             {renderServiceBrowser()}
+            {renderAuthHelpModal()}
 
             {/* HEADER */}
             <header className={`bg-white sticky top-0 z-50 transition-all duration-200 ${scrolled ? 'border-b border-stone-200' : ''}`}>
@@ -1680,18 +2310,39 @@ void loop() {
                     )}
 
                     {user ? (
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
+                            {user.isAnonymous && (
+                                <span className="text-[10px] uppercase font-bold tracking-wider bg-stone-100 text-stone-600 px-2 py-0.5 rounded-full border border-stone-200">
+                                    Guest
+                                </span>
+                            )}
                             {user.photoURL ? (
-                                <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full" />
+                                <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full border border-stone-200" />
                             ) : (
-                                <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center text-stone-500">
+                                <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center text-stone-600 border border-stone-200">
                                     <UserIcon size={16} />
                                 </div>
                             )}
-                            <button onClick={handleLogout} className="text-sm text-black hover:bg-stone-100 px-3 py-1.5 rounded transition-colors font-medium">Sign Out</button>
+                            <button onClick={handleLogout} className="text-xs text-stone-700 hover:text-black hover:bg-stone-100 px-3 py-1.5 rounded transition-colors font-medium">Sign Out</button>
                         </div>
                     ) : (
-                        <button onClick={handleLogin} className="flex items-center gap-2 bg-stone-900 hover:bg-black px-5 py-2 rounded-full text-sm font-bold transition-all text-white shadow-md"><UserIcon size={16} /> Sign In</button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleGuestLogin}
+                                disabled={loggingIn}
+                                className="text-xs text-stone-600 hover:text-stone-900 px-3 py-1.5 rounded transition-colors font-medium border border-stone-200 hover:bg-stone-50 hidden sm:block"
+                            >
+                                Guest Mode
+                            </button>
+                            <button
+                                onClick={handleLogin}
+                                disabled={loggingIn}
+                                className="flex items-center gap-2 bg-stone-900 hover:bg-black px-4 py-2 rounded-full text-xs font-bold transition-all text-white shadow-md disabled:opacity-60"
+                            >
+                                {loggingIn ? <RefreshCw size={14} className="animate-spin" /> : <UserIcon size={14} />}
+                                Sign In
+                            </button>
+                        </div>
                     )}
                 </div>
 
@@ -1708,10 +2359,56 @@ void loop() {
             {/* CONTENT */}
             <main className="max-w-6xl mx-auto px-6 py-10">
                 {!user ? (
-                    <div className="text-center py-20">
+                    <div className="text-center py-16 max-w-xl mx-auto">
                         <h2 className="text-5xl font-bold text-black mb-6">Configure Your <br />InkBridge Display</h2>
-                        <p className="text-black max-w-md mx-auto mb-10 text-lg italic">Connect your ESP32 E-Ink display and configure your data sources in a unified, paper-like interface.</p>
-                        <button onClick={handleLogin} className="bg-stone-900 hover:bg-black text-white px-8 py-4 rounded-full font-bold text-lg transition-all shadow-xl hover:translate-y-[-2px]">Get Started</button>
+                        <p className="text-black mb-8 text-lg italic">Connect your ESP32 E-Ink display and configure your data sources in a unified, paper-like interface.</p>
+
+                        {authError && (
+                            <div className="mb-8 text-left bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm animate-in fade-in">
+                                <div className="flex items-start gap-3">
+                                    <ShieldAlert size={20} className="text-amber-700 shrink-0 mt-0.5" />
+                                    <div className="space-y-1.5 flex-1">
+                                        <div className="text-xs font-bold text-amber-900">
+                                            {authError.code === 'auth/unauthorized-domain' ? 'Firebase Domain Not Authorized' : 'Sign-In Notice'}
+                                        </div>
+                                        <p className="text-xs text-amber-800 leading-relaxed">
+                                            {authError.code === 'auth/unauthorized-domain'
+                                                ? `The domain '${authError.domain || window.location.hostname}' has not been added to your Firebase project's authorized domains list. You can enter instantly using Guest Mode or authorize this domain in Firebase.`
+                                                : authError.message}
+                                        </p>
+                                        <div className="flex items-center gap-3 pt-1">
+                                            {authError.code === 'auth/unauthorized-domain' && (
+                                                <button
+                                                    onClick={() => setShowAuthHelpModal(true)}
+                                                    className="text-xs font-bold text-amber-900 underline hover:text-black"
+                                                >
+                                                    View Instructions & Copy Domain
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                            <button
+                                onClick={handleLogin}
+                                disabled={loggingIn}
+                                className="w-full sm:w-auto bg-stone-900 hover:bg-black text-white px-7 py-3.5 rounded-full font-bold text-base transition-all shadow-lg hover:translate-y-[-1px] flex items-center justify-center gap-2 disabled:opacity-60"
+                            >
+                                {loggingIn ? <RefreshCw size={18} className="animate-spin" /> : <UserIcon size={18} />}
+                                Sign In with Google
+                            </button>
+                            <button
+                                onClick={handleGuestLogin}
+                                disabled={loggingIn}
+                                className="w-full sm:w-auto bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 px-6 py-3.5 rounded-full font-bold text-base transition-all shadow-sm flex items-center justify-center gap-2"
+                            >
+                                Continue as Guest
+                            </button>
+                        </div>
+                        <p className="text-xs text-stone-400 mt-4">Guest mode stores your configuration and devices without requiring Google login.</p>
                     </div>
                 ) : (
                     <>

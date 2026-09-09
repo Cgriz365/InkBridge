@@ -1,0 +1,6 @@
+{
+  "name": "InkBridge",
+  "description": "ESP32 E-Ink display companion dashboard and IoT data feed manager",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

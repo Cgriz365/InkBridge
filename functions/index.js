@@ -50,6 +50,26 @@ const GOOGLE_MAPS_API_KEY = defineString("GOOGLE_MAPS_API_KEY");
 const NEWS_API_KEY = defineString("NEWS_API_KEY");
 const COINMARKETCAP_API_KEY = defineString("COINMARKETCAP_API_KEY");
 
+const getSpotifyClientId = (settings) => {
+    if (settings && settings.spotify_client_id) return settings.spotify_client_id;
+    if (process.env.SPOTIFY_CLIENT_ID) return process.env.SPOTIFY_CLIENT_ID;
+    try {
+        const val = SPOTIFY_CLIENT_ID.value();
+        if (val) return val;
+    } catch (_) {}
+    return "8872c1c8b9db49fd8c783d24649cce00";
+};
+
+const getSpotifyClientSecret = (settings) => {
+    if (settings && settings.spotify_client_secret) return settings.spotify_client_secret;
+    if (process.env.SPOTIFY_CLIENT_SECRET) return process.env.SPOTIFY_CLIENT_SECRET;
+    try {
+        const val = SPOTIFY_CLIENT_SECRET.value();
+        if (val) return val;
+    } catch (_) {}
+    return "";
+};
+
 const getSpotifyRedirectUri = () => {
     return `https://us-central1-${process.env.GCLOUD_PROJECT || "inkbase01"}.cloudfunctions.net/api/spotify/callback`;
 };
@@ -57,23 +77,42 @@ const getSpotifyRedirectUri = () => {
 // --- DATA PROVIDERS ---
 const refreshSpotifyToken = async (uid, refreshToken, deviceId) => {
     console.log(`Refreshing Spotify token for UID: ${uid} Device: ${deviceId}`);
+    const settingsRef = getSettingsRef(uid, deviceId);
+    let settings = {};
+    try {
+        const docSnap = await settingsRef.get();
+        if (docSnap.exists) settings = docSnap.data();
+    } catch (e) {
+        console.warn("Could not read settings before refresh:", e);
+    }
+
+    const clientId = getSpotifyClientId(settings);
+    const clientSecret = getSpotifyClientSecret(settings);
+
     const params = new URLSearchParams();
     params.append('grant_type', 'refresh_token');
     params.append('refresh_token', refreshToken);
+    if (clientId) {
+        params.append('client_id', clientId);
+    }
+
+    const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded'
+    };
+    if (clientId && clientSecret) {
+        headers['Authorization'] = 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64');
+    }
 
     const response = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
-        headers: {
-            'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID.value() + ':' + SPOTIFY_CLIENT_SECRET.value()).toString('base64'),
-            'Content-Type': 'application/x-www-form-urlencoded'
-        },
+        headers: headers,
         body: params
     });
 
     if (!response.ok) {
         const errText = await response.text();
         console.error(`Failed to refresh Spotify token: ${response.status} ${errText}`);
-        throw new Error('Failed to refresh Spotify token');
+        throw new Error(`Failed to refresh Spotify token (${response.status}): ${errText}`);
     }
 
     const data = await response.json();
@@ -83,7 +122,7 @@ const refreshSpotifyToken = async (uid, refreshToken, deviceId) => {
     };
     if (data.refresh_token) updates.spotify_refresh_token = data.refresh_token;
 
-    await getSettingsRef(uid, deviceId).set(updates, { merge: true });
+    await settingsRef.set(updates, { merge: true });
     console.log(`Spotify token refreshed successfully for UID: ${uid}`);
 
     return data.access_token;
@@ -97,14 +136,20 @@ const makeSpotifyRequest = async (uid, endpoint, method = "GET", body = null, de
 
     let { spotify_access_token, spotify_refresh_token, spotify_token_expiry } = docSnap.data();
 
-    if (!spotify_access_token || !spotify_refresh_token) {
+    if (!spotify_access_token && !spotify_refresh_token) {
         throw new Error("Spotify not connected");
     }
 
     // Check if token is expired or expiring in the next 5 minutes
-    if (Date.now() > (spotify_token_expiry - 300000)) {
-        console.log(`Token expired for ${uid}, refreshing...`);
-        spotify_access_token = await refreshSpotifyToken(uid, spotify_refresh_token, deviceId);
+    const tokenExpiring = !spotify_access_token || !spotify_token_expiry || Date.now() > (Number(spotify_token_expiry) - 300000);
+    if (tokenExpiring && spotify_refresh_token) {
+        console.log(`Token expired or expiring soon for ${uid}, refreshing...`);
+        try {
+            spotify_access_token = await refreshSpotifyToken(uid, spotify_refresh_token, deviceId);
+        } catch (refreshErr) {
+            console.error("Proactive token refresh failed:", refreshErr);
+            if (!spotify_access_token) throw refreshErr;
+        }
     }
 
     const options = {
@@ -118,7 +163,19 @@ const makeSpotifyRequest = async (uid, endpoint, method = "GET", body = null, de
     if (body) options.body = JSON.stringify(body);
 
     const cleanEndpoint = endpoint.startsWith("/") ? endpoint.substring(1) : endpoint;
-    const response = await fetch(`https://api.spotify.com/v1/${cleanEndpoint}`, options);
+    let response = await fetch(`https://api.spotify.com/v1/${cleanEndpoint}`, options);
+
+    // If 401 Unauthorized, attempt reactive token refresh and retry once
+    if (response.status === 401 && spotify_refresh_token) {
+        console.log(`Received 401 from Spotify for ${uid}, refreshing token and retrying...`);
+        try {
+            spotify_access_token = await refreshSpotifyToken(uid, spotify_refresh_token, deviceId);
+            options.headers["Authorization"] = `Bearer ${spotify_access_token}`;
+            response = await fetch(`https://api.spotify.com/v1/${cleanEndpoint}`, options);
+        } catch (retryErr) {
+            console.error("Reactive token refresh retry failed:", retryErr);
+        }
+    }
 
     if (!response.ok) {
         const errText = await response.text();
@@ -164,20 +221,27 @@ app.get('/setup', async (req, res) => {
 });
 
 // --- ROUTE: SPOTIFY AUTH ---
-app.get('/spotify/login', (req, res) => {
+app.get('/spotify/login', async (req, res) => {
     const uid = req.query.uid;
     const deviceId = req.query.device_id;
     console.log(`Initiating Spotify login for UID: ${uid}`);
     const redirectUrl = req.query.redirect || "http://localhost:5173";
     if (!uid) return res.status(400).send("Missing UID");
 
-    // ADDED: user-modify-playback-state
+    let settings = {};
+    try {
+        const settingsRef = getSettingsRef(uid, deviceId);
+        const docSnap = await settingsRef.get();
+        if (docSnap.exists) settings = docSnap.data();
+    } catch (_) {}
+
+    const clientId = (req.query.client_id) || getSpotifyClientId(settings);
     const scope = 'user-read-playback-state user-read-currently-playing user-modify-playback-state';
-    const state = JSON.stringify({ uid, redirectUrl, deviceId });
+    const state = JSON.stringify({ uid, redirectUrl, deviceId, popup: req.query.popup === 'true' });
 
     const query = new URLSearchParams({
         response_type: 'code',
-        client_id: SPOTIFY_CLIENT_ID.value(),
+        client_id: clientId,
         scope: scope,
         redirect_uri: getSpotifyRedirectUri(),
         state: state
@@ -196,36 +260,115 @@ app.get('/spotify/callback', async (req, res) => {
         return res.redirect('/?error=state_mismatch');
     }
 
-    const { uid, redirectUrl, deviceId } = JSON.parse(state);
+    let parsedState = {};
+    try {
+        parsedState = JSON.parse(state);
+    } catch (e) {
+        console.error("Failed to parse state:", e);
+    }
+    const { uid, redirectUrl, deviceId, popup } = parsedState;
     console.log(`Processing callback for UID: ${uid}, Redirect: ${redirectUrl}`);
 
     try {
+        const settingsRef = getSettingsRef(uid, deviceId);
+        let settings = {};
+        try {
+            const docSnap = await settingsRef.get();
+            if (docSnap.exists) settings = docSnap.data();
+        } catch (_) {}
+
+        const clientId = getSpotifyClientId(settings);
+        const clientSecret = getSpotifyClientSecret(settings);
+
         const params = new URLSearchParams();
         params.append('code', code);
         params.append('redirect_uri', getSpotifyRedirectUri());
         params.append('grant_type', 'authorization_code');
+        if (clientId) params.append('client_id', clientId);
+
+        const headers = {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        };
+        if (clientId && clientSecret) {
+            headers['Authorization'] = 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64');
+        }
 
         const response = await fetch('https://accounts.spotify.com/api/token', {
             method: 'POST',
-            headers: {
-                'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID.value() + ':' + SPOTIFY_CLIENT_SECRET.value()).toString('base64'),
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
+            headers: headers,
             body: params
         });
 
         if (!response.ok) {
             const errText = await response.text();
             console.error(`Spotify Token Exchange Failed: ${response.status} ${errText}`);
-            throw new Error('Spotify Token Exchange Failed');
+            throw new Error(`Spotify Token Exchange Failed: ${errText}`);
         }
         const data = await response.json();
 
-        await getSettingsRef(uid, deviceId).set({ spotify_access_token: data.access_token, spotify_refresh_token: data.refresh_token, spotify_token_expiry: Date.now() + (data.expires_in * 1000), spotify_enabled: true }, { merge: true });
+        await settingsRef.set({
+            spotify_access_token: data.access_token,
+            spotify_refresh_token: data.refresh_token,
+            spotify_token_expiry: Date.now() + (data.expires_in * 1000),
+            spotify_enabled: true
+        }, { merge: true });
 
-        console.log("Spotify token exchange successful, redirecting...");
-        res.redirect(redirectUrl);
-    } catch (error) { console.error("Spotify Auth Error:", error); res.status(500).send("Authentication Error"); }
+        console.log("Spotify token exchange successful");
+
+        if (popup || req.query.popup === 'true' || (redirectUrl && redirectUrl.includes('spotify-callback.html'))) {
+            return res.send(`
+                <!DOCTYPE html>
+                <html>
+                  <head><title>Spotify Connected</title></head>
+                  <body style="background:#121212;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+                    <div style="text-align:center;">
+                      <h2 style="color:#1DB954;">Spotify Connected!</h2>
+                      <p>Closing window and returning to InkBridge...</p>
+                      <script>
+                        if (window.opener) {
+                          window.opener.postMessage({ type: 'SPOTIFY_AUTH_SUCCESS', uid: '${uid}', deviceId: '${deviceId}' }, '*');
+                          setTimeout(function() { window.close(); }, 500);
+                        } else {
+                          window.location.href = '${redirectUrl || "/"}';
+                        }
+                      </script>
+                    </div>
+                  </body>
+                </html>
+            `);
+        }
+
+        res.redirect(redirectUrl || "/");
+    } catch (error) {
+        console.error("Spotify Auth Error:", error);
+        res.status(500).send("Authentication Error: " + error.message);
+    }
+});
+
+app.post("/spotify/refresh", async (req, res) => {
+    try {
+        const { uid, device_id } = req.body;
+        if (!uid) {
+            return res.status(400).json({ status: "error", message: "Missing UID" });
+        }
+
+        const settingsRef = getSettingsRef(uid, device_id);
+        const docSnap = await settingsRef.get();
+        if (!docSnap.exists) {
+            return res.status(404).json({ status: "error", message: "User settings not found" });
+        }
+
+        const { spotify_refresh_token } = docSnap.data();
+        if (!spotify_refresh_token) {
+            return res.status(400).json({ status: "error", message: "No Spotify refresh token found in settings" });
+        }
+
+        const accessToken = await refreshSpotifyToken(uid, spotify_refresh_token, device_id);
+        res.json({ status: "success", access_token: accessToken });
+    } catch (error) {
+        console.error("Spotify Token Refresh Error:", error);
+        res.status(500).json({ status: "error", message: error.message });
+    }
 });
 
 app.post("/spotify/request", async (req, res) => {
